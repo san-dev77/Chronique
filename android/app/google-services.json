@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "873323554383",
+    "project_id": "form-manager-27163",
+    "storage_bucket": "form-manager-27163.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:873323554383:android:797cc61f911424690e2c3a",
+        "android_client_info": {
+          "package_name": "com.example.note_keeper"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "873323554383-evuu0eu5ds90e86n2if99ar9thmpgsv7.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBz463_bNCoz_cKRINAZ2MmxWtEacCmelI"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "873323554383-evuu0eu5ds90e86n2if99ar9thmpgsv7.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
