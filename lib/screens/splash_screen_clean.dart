@@ -2,6 +2,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../services/auth_service.dart';
+import '../theme/app_theme.dart';
 import '../widgets/note_logo.dart';
 
 /// Splash Screen clean et cohérent avec l'app de notes
@@ -28,7 +29,7 @@ class _SplashScreenCleanState extends State<SplashScreenClean>
     super.initState();
 
     SystemChrome.setSystemUIOverlayStyle(
-      const SystemUiOverlayStyle(
+      SystemUiOverlayStyle(
         statusBarColor: Colors.transparent,
         statusBarIconBrightness: Brightness.dark,
       ),

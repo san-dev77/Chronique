@@ -2,6 +2,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../services/auth_service.dart';
+import '../theme/app_theme.dart';
 
 /// Splash Screen MASTERCLASS avec effets 3D et particules animées
 class SplashScreenMasterclass extends StatefulWidget {
@@ -32,7 +33,7 @@ class _SplashScreenMasterclassState extends State<SplashScreenMasterclass>
     super.initState();
 
     SystemChrome.setSystemUIOverlayStyle(
-      const SystemUiOverlayStyle(
+      SystemUiOverlayStyle(
         statusBarColor: Colors.transparent,
         statusBarIconBrightness: Brightness.light,
       ),

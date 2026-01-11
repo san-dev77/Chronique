@@ -1,19 +1,17 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
-import 'dart:io';
 import '../models/note.dart';
 import '../widgets/color_picker.dart';
+import '../widgets/image_gallery_editor.dart';
 import '../services/image_storage_service.dart';
+import '../theme/app_theme.dart';
 
 class NoteEditScreen extends StatefulWidget {
   final Note note;
   final Function(Note) onSave;
 
-  const NoteEditScreen({
-    super.key,
-    required this.note,
-    required this.onSave,
-  });
+  const NoteEditScreen({super.key, required this.note, required this.onSave});
 
   @override
   State<NoteEditScreen> createState() => _NoteEditScreenState();
@@ -23,8 +21,17 @@ class _NoteEditScreenState extends State<NoteEditScreen> {
   late TextEditingController _titleController;
   late TextEditingController _contentController;
   late Note _note;
-  final ImagePicker _imagePicker = ImagePicker();
-  bool _isSavingImage = false;
+  final _imagePicker = ImagePicker();
+  final _titleFocus = FocusNode();
+  final _contentFocus = FocusNode();
+  bool _isSaving = false;
+
+  // Pour tracker les changements non enregistres
+  late String _initialTitle;
+  late String _initialContent;
+  late List<String> _initialImages;
+  late int _initialColor;
+  late bool _initialFavorite;
 
   @override
   void initState() {
@@ -41,432 +48,434 @@ class _NoteEditScreenState extends State<NoteEditScreen> {
     );
     _titleController = TextEditingController(text: _note.title);
     _contentController = TextEditingController(text: _note.content);
+
+    // Sauvegarder l'etat initial
+    _initialTitle = widget.note.title;
+    _initialContent = widget.note.content;
+    _initialImages = List.from(widget.note.imagePaths);
+    _initialColor = widget.note.color.value;
+    _initialFavorite = widget.note.isFavorite;
   }
 
   @override
   void dispose() {
     _titleController.dispose();
     _contentController.dispose();
+    _titleFocus.dispose();
+    _contentFocus.dispose();
     super.dispose();
   }
 
-  void _saveNote() {
+  bool _hasUnsavedChanges() {
+    final currentTitle = _titleController.text.trim();
+    final currentContent = _contentController.text.trim();
+
+    // Verifier si le contenu est vide (nouvelle note sans contenu)
+    if (currentTitle.isEmpty &&
+        currentContent.isEmpty &&
+        _note.imagePaths.isEmpty) {
+      return false;
+    }
+
+    return currentTitle != _initialTitle ||
+        currentContent != _initialContent ||
+        _note.imagePaths.length != _initialImages.length ||
+        !_listEquals(_note.imagePaths, _initialImages) ||
+        _note.color.value != _initialColor ||
+        _note.isFavorite != _initialFavorite;
+  }
+
+  bool _listEquals(List<String> a, List<String> b) {
+    if (a.length != b.length) return false;
+    for (int i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
+  }
+
+  Future<bool> _showUnsavedChangesDialog() async {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    final result = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: AppTheme.skyBlue.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(Icons.warning_amber_rounded,
+                  color: AppTheme.skyBlue, size: 24),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Text(
+                'Modifications non enregistrees',
+                style: TextStyle(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w700,
+                  color: isDark ? Colors.white : AppTheme.textDark,
+                ),
+              ),
+            ),
+          ],
+        ),
+        content: Text(
+          'Vous avez des modifications non enregistrees. Voulez-vous les sauvegarder avant de quitter ?',
+          style: TextStyle(
+            fontSize: 14,
+            height: 1.5,
+            color: isDark ? Colors.white70 : Colors.grey.shade700,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text(
+              'Quitter',
+              style: TextStyle(color: isDark ? Colors.white54 : Colors.grey),
+            ),
+          ),
+          ElevatedButton.icon(
+            onPressed: () {
+              Navigator.pop(context, true);
+            },
+            icon: const Icon(Icons.save_rounded, size: 18),
+            label: const Text('Enregistrer'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppTheme.skyBlue,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12)),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    return result ?? false;
+  }
+
+  Future<void> _handleBack() async {
+    if (_hasUnsavedChanges()) {
+      final shouldSave = await _showUnsavedChangesDialog();
+      if (shouldSave) {
+        _save();
+      } else {
+        Navigator.pop(context);
+      }
+    } else {
+      Navigator.pop(context);
+    }
+  }
+
+  void _save() {
     _note.title = _titleController.text.trim();
     _note.content = _contentController.text.trim();
+    _note.modifiedAt = DateTime.now();
     widget.onSave(_note);
     Navigator.pop(context);
   }
 
   Future<void> _pickImage() async {
+    setState(() => _isSaving = true);
     try {
-      setState(() => _isSavingImage = true);
-
-      final XFile? image = await _imagePicker.pickImage(
+      final image = await _imagePicker.pickImage(
         source: ImageSource.gallery,
-        maxWidth: 1024,
-        maxHeight: 1024,
+        maxWidth: 1920,
+        maxHeight: 1920,
         imageQuality: 85,
       );
-
       if (image != null) {
-        // CORRECTION : Copier l'image dans le stockage permanent
-        // au lieu d'utiliser directement le chemin temporaire
-        final permanentPath = await ImageStorageService.instance
-            .saveImagePermanently(image.path);
-
-        setState(() {
-          _note.imagePaths.add(permanentPath);
-          _isSavingImage = false;
-        });
-
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('✅ Image ajoutée et sauvegardée'),
-              duration: Duration(seconds: 2),
-              backgroundColor: Colors.green,
-            ),
-          );
-        }
-      } else {
-        setState(() => _isSavingImage = false);
+        final path =
+            await ImageStorageService.instance.saveImagePermanently(image.path);
+        setState(() => _note.imagePaths.add(path));
       }
-    } catch (e) {
-      setState(() => _isSavingImage = false);
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('❌ Erreur: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
+    } finally {
+      setState(() => _isSaving = false);
     }
   }
 
-  void _removeImage(int index) {
-    setState(() {
-      _note.imagePaths.removeAt(index);
-    });
-  }
-
-  void _changeColor(Color color) {
-    setState(() {
-      _note.color = color;
-    });
+  void _showColorPicker() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (_) => Container(
+        padding: const EdgeInsets.all(24),
+        decoration: BoxDecoration(
+          color: Theme.of(context).scaffoldBackgroundColor,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 40,
+              height: 4,
+              margin: const EdgeInsets.only(bottom: 20),
+              decoration: BoxDecoration(
+                  color: Colors.grey.shade300,
+                  borderRadius: BorderRadius.circular(2)),
+            ),
+            const Text('Couleur de la note',
+                style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600)),
+            const SizedBox(height: 20),
+            ColorPicker(
+              selectedColor: _note.color,
+              onColorChanged: (c) {
+                setState(() => _note.color = c);
+                Navigator.pop(context);
+              },
+            ),
+            const SizedBox(height: 16),
+          ],
+        ),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: CustomScrollView(
-        slivers: [
-          // Hero banner avec image ou couleur
-          SliverAppBar(
-            expandedHeight: 200,
-            floating: false,
-            pinned: true,
-            backgroundColor: _note.color,
-            elevation: 0,
-            flexibleSpace: FlexibleSpaceBar(
-              background: _note.imagePaths.isNotEmpty
-                  ? Stack(
-                      fit: StackFit.expand,
-                      children: [
-                        // Image principale en hero banner
-                        Container(
-                          decoration: BoxDecoration(
-                            image: DecorationImage(
-                              image: FileImage(File(_note.imagePaths.first)),
-                              fit: BoxFit.cover,
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final pageColor = isDark ? AppTheme.surfaceDark : _note.color;
+    final textColor = _getTextColor(pageColor, isDark);
+
+    SystemChrome.setSystemUIOverlayStyle(SystemUiOverlayStyle(
+      statusBarColor: AppTheme.skyBlue,
+      statusBarIconBrightness: Brightness.light,
+    ));
+
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) async {
+        if (didPop) return;
+        await _handleBack();
+      },
+      child: Scaffold(
+        backgroundColor: isDark ? AppTheme.bgDark : AppTheme.bgLight,
+        body: SafeArea(
+          child: Column(
+            children: [
+              // Top bar
+              _buildTopBar(textColor, isDark),
+              // Page effet
+              Expanded(
+                child: Container(
+                  margin: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                  decoration: BoxDecoration(
+                    color: pageColor,
+                    borderRadius: BorderRadius.circular(24),
+                    border: _note.color == Colors.white && !isDark
+                        ? Border.all(color: Colors.grey.shade200)
+                        : null,
+                    boxShadow: [
+                      BoxShadow(
+                        color: isDark
+                            ? Colors.black.withOpacity(0.3)
+                            : Colors.black.withOpacity(0.06),
+                        blurRadius: 20,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(24),
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.all(24),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // Images
+                          if (_note.imagePaths.isNotEmpty) ...[
+                            ImageGalleryEditor(
+                              imagePaths: _note.imagePaths,
+                              onRemove: (i) =>
+                                  setState(() => _note.imagePaths.removeAt(i)),
+                              textColor: textColor,
                             ),
+                            const SizedBox(height: 24),
+                          ],
+
+                          // Titre - style page
+                          EditableText(
+                            controller: _titleController,
+                            focusNode: _titleFocus,
+                            style: TextStyle(
+                              fontSize: 26,
+                              fontWeight: FontWeight.w700,
+                              color: textColor,
+                              height: 1.3,
+                            ),
+                            cursorColor: AppTheme.skyBlue,
+                            backgroundCursorColor: Colors.grey,
+                            maxLines: null,
+                            onChanged: (_) => setState(() {}),
                           ),
-                        ),
-                        // Overlay pour améliorer la lisibilité
-                        Container(
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              begin: Alignment.topCenter,
-                              end: Alignment.bottomCenter,
-                              colors: [
-                                Colors.transparent,
-                                Colors.black.withOpacity(0.3),
-                              ],
-                            ),
-                          ),
-                        ),
-                        // Bouton pour supprimer l'image
-                        Positioned(
-                          top: 16,
-                          right: 16,
-                          child: Container(
-                            decoration: BoxDecoration(
-                              color: Colors.black.withOpacity(0.5),
-                              shape: BoxShape.circle,
-                            ),
-                            child: IconButton(
-                              onPressed: () => _removeImage(0),
-                              icon: const Icon(
-                                Icons.close,
-                                color: Colors.white,
-                                size: 20,
+                          if (_titleController.text.isEmpty)
+                            GestureDetector(
+                              onTap: () => _titleFocus.requestFocus(),
+                              child: Text(
+                                'Titre',
+                                style: TextStyle(
+                                  fontSize: 26,
+                                  fontWeight: FontWeight.w700,
+                                  color: textColor.withOpacity(0.25),
+                                  height: 1.3,
+                                ),
                               ),
                             ),
+
+                          const SizedBox(height: 20),
+
+                          // Ligne décorative
+                          Container(
+                            height: 2,
+                            width: 60,
+                            decoration: BoxDecoration(
+                              color: textColor.withOpacity(0.15),
+                              borderRadius: BorderRadius.circular(1),
+                            ),
                           ),
-                        ),
-                      ],
-                    )
-                  : Container(
-                      decoration: BoxDecoration(
-                        color: _note.color,
-                        gradient: LinearGradient(
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                          colors: [
-                            _note.color,
-                            _note.color.withOpacity(0.8),
-                          ],
-                        ),
-                      ),
-                      child: Center(
-                        child: Icon(
-                          Icons.image,
-                          size: 64,
-                          color: Colors.white.withOpacity(0.3),
-                        ),
-                      ),
-                    ),
-            ),
-            leading: IconButton(
-              onPressed: () => Navigator.pop(context),
-              icon: Icon(
-                Icons.arrow_back,
-                color: _note.imagePaths.isNotEmpty
-                    ? Colors.white
-                    : Theme.of(context).colorScheme.onSurface,
-              ),
-            ),
-          ),
 
-          // Contenu de la note
-          SliverPadding(
-            padding: const EdgeInsets.all(16),
-            sliver: SliverList(
-              delegate: SliverChildListDelegate([
-                // Sélecteur de couleur
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.surface,
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(
-                      color: Theme.of(context)
-                          .colorScheme
-                          .outline
-                          .withOpacity(0.2),
-                    ),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Couleur de la note',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                          color: Theme.of(context).colorScheme.onSurface,
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      ColorPicker(
-                        selectedColor: _note.color,
-                        onColorChanged: _changeColor,
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 16),
+                          const SizedBox(height: 20),
 
-                // Titre
-                TextField(
-                  controller: _titleController,
-                  decoration: InputDecoration(
-                    hintText: 'Titre de la note',
-                    hintStyle: TextStyle(
-                      color: Theme.of(context)
-                          .colorScheme
-                          .onSurface
-                          .withOpacity(0.5),
-                    ),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    filled: true,
-                    fillColor: Theme.of(context).colorScheme.surface,
-                  ),
-                  style: const TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(height: 16),
-
-                // Contenu - Correction du layout
-                Container(
-                  height:
-                      200, // Hauteur fixe pour éviter les problèmes de layout
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.surface,
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(
-                      color: Theme.of(context)
-                          .colorScheme
-                          .outline
-                          .withOpacity(0.2),
-                    ),
-                  ),
-                  child: TextField(
-                    controller: _contentController,
-                    decoration: InputDecoration(
-                      hintText: 'Contenu de la note...',
-                      hintStyle: TextStyle(
-                        color: Theme.of(context)
-                            .colorScheme
-                            .onSurface
-                            .withOpacity(0.5),
-                      ),
-                      border: InputBorder.none,
-                      contentPadding: const EdgeInsets.all(16),
-                    ),
-                    maxLines: null,
-                    textAlignVertical: TextAlignVertical.top,
-                    style: const TextStyle(fontSize: 16),
-                  ),
-                ),
-                const SizedBox(height: 24),
-
-                // Section des images
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.surface,
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(
-                      color: Theme.of(context)
-                          .colorScheme
-                          .outline
-                          .withOpacity(0.2),
-                    ),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Icon(
-                            Icons.image,
-                            color: Theme.of(context).colorScheme.primary,
-                            size: 20,
-                          ),
-                          const SizedBox(width: 8),
-                          Text(
-                            'Images',
+                          // Contenu - style page
+                          EditableText(
+                            controller: _contentController,
+                            focusNode: _contentFocus,
                             style: TextStyle(
                               fontSize: 16,
-                              fontWeight: FontWeight.w600,
-                              color: Theme.of(context).colorScheme.onSurface,
+                              color: textColor.withOpacity(0.85),
+                              height: 1.8,
                             ),
+                            cursorColor: AppTheme.skyBlue,
+                            backgroundCursorColor: Colors.grey,
+                            maxLines: null,
+                            onChanged: (_) => setState(() {}),
                           ),
+                          if (_contentController.text.isEmpty)
+                            GestureDetector(
+                              onTap: () => _contentFocus.requestFocus(),
+                              child: Text(
+                                'Commencez à écrire...',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  color: textColor.withOpacity(0.25),
+                                  height: 1.8,
+                                ),
+                              ),
+                            ),
+
+                          const SizedBox(height: 200),
                         ],
                       ),
-                      const SizedBox(height: 16),
-
-                      // Bouton pour ajouter une image
-                      SizedBox(
-                        width: double.infinity,
-                        child: ElevatedButton.icon(
-                          onPressed: _isSavingImage ? null : _pickImage,
-                          icon: _isSavingImage
-                              ? const SizedBox(
-                                  width: 20,
-                                  height: 20,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    color: Colors.white,
-                                  ),
-                                )
-                              : const Icon(Icons.add_photo_alternate),
-                          label: Text(_isSavingImage
-                              ? 'Enregistrement...'
-                              : 'Ajouter une image'),
-                          style: ElevatedButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(vertical: 16),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                          ),
-                        ),
-                      ),
-
-                      // Galerie d'images (si il y en a)
-                      if (_note.imagePaths.isNotEmpty) ...[
-                        const SizedBox(height: 16),
-                        Text(
-                          'Images ajoutées',
-                          style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w500,
-                            color: Theme.of(context)
-                                .colorScheme
-                                .onSurface
-                                .withOpacity(0.7),
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        SizedBox(
-                          height: 100,
-                          child: ListView.builder(
-                            scrollDirection: Axis.horizontal,
-                            itemCount: _note.imagePaths.length,
-                            itemBuilder: (context, index) {
-                              return Container(
-                                margin: const EdgeInsets.only(right: 12),
-                                child: Stack(
-                                  children: [
-                                    Container(
-                                      width: 100,
-                                      height: 100,
-                                      decoration: BoxDecoration(
-                                        borderRadius: BorderRadius.circular(12),
-                                        image: DecorationImage(
-                                          image: FileImage(
-                                              File(_note.imagePaths[index])),
-                                          fit: BoxFit.cover,
-                                        ),
-                                      ),
-                                    ),
-                                    Positioned(
-                                      top: 4,
-                                      right: 4,
-                                      child: GestureDetector(
-                                        onTap: () => _removeImage(index),
-                                        child: Container(
-                                          padding: const EdgeInsets.all(4),
-                                          decoration: const BoxDecoration(
-                                            color: Colors.red,
-                                            shape: BoxShape.circle,
-                                          ),
-                                          child: const Icon(
-                                            Icons.close,
-                                            size: 16,
-                                            color: Colors.white,
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              );
-                            },
-                          ),
-                        ),
-                      ],
-                    ],
+                    ),
                   ),
                 ),
-                const SizedBox(height: 32),
-              ]),
-            ),
-          ),
-        ],
-      ),
-      // Bouton de sauvegarde flottant plus visible
-      floatingActionButton: Container(
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(28),
-          boxShadow: [
-            BoxShadow(
-              color: Theme.of(context).colorScheme.primary.withOpacity(0.3),
-              blurRadius: 20,
-              offset: const Offset(0, 10),
-            ),
-          ],
-        ),
-        child: FloatingActionButton.extended(
-          onPressed: _saveNote,
-          backgroundColor: Theme.of(context).colorScheme.primary,
-          foregroundColor: Colors.white,
-          icon: const Icon(Icons.save, size: 24),
-          label: const Text(
-            'Sauvegarder',
-            style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.w600,
-            ),
+              ),
+            ],
           ),
         ),
       ),
     );
+  }
+
+  Widget _buildTopBar(Color textColor, bool isDark) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 8, 16, 0),
+      child: Row(
+        children: [
+          // Retour
+          IconButton(
+            onPressed: _handleBack,
+            icon: Icon(Icons.arrow_back_rounded,
+                color: isDark ? AppTheme.textLight : AppTheme.textDark),
+          ),
+          const Spacer(),
+          // Couleur
+          _buildTool(Icons.palette_outlined, _showColorPicker, isDark),
+          const SizedBox(width: 6),
+          // Image
+          _isSaving
+              ? Container(
+                  width: 40,
+                  height: 40,
+                  alignment: Alignment.center,
+                  child: SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color:
+                              isDark ? AppTheme.textLight : AppTheme.textDark)),
+                )
+              : _buildTool(Icons.image_outlined, _pickImage, isDark),
+          const SizedBox(width: 6),
+          // Favori
+          _buildTool(
+            _note.isFavorite
+                ? Icons.favorite_rounded
+                : Icons.favorite_outline_rounded,
+            () => setState(() => _note.isFavorite = !_note.isFavorite),
+            isDark,
+            color: _note.isFavorite ? AppTheme.skyBlue : null,
+          ),
+          const SizedBox(width: 12),
+          // Save
+          GestureDetector(
+            onTap: _save,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              decoration: BoxDecoration(
+                color: AppTheme.skyBlue,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: const [
+                  Icon(Icons.check_rounded, size: 18, color: Colors.white),
+                  SizedBox(width: 6),
+                  Text('OK',
+                      style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 14)),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTool(IconData icon, VoidCallback onTap, bool isDark,
+      {Color? color}) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 40,
+        height: 40,
+        decoration: BoxDecoration(
+          color: isDark
+              ? Colors.white.withOpacity(0.08)
+              : Colors.black.withOpacity(0.04),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Icon(icon,
+            size: 20,
+            color: color ?? (isDark ? AppTheme.textLight : AppTheme.textDark)),
+      ),
+    );
+  }
+
+  Color _getTextColor(Color bg, bool isDark) {
+    if (isDark) return AppTheme.textLight;
+    return bg.computeLuminance() > 0.5 ? AppTheme.textDark : Colors.white;
   }
 }

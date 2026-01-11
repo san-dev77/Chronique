@@ -1,9 +1,12 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
-import 'dart:io';
+import 'package:flutter/services.dart';
 import '../models/note.dart';
+import '../widgets/image_gallery_editor.dart';
+import '../theme/app_theme.dart';
 import '../utils/date_formatter.dart';
 
-class NoteViewScreen extends StatelessWidget {
+class NoteViewScreen extends StatefulWidget {
   final Note note;
   final VoidCallback onEdit;
   final VoidCallback onDelete;
@@ -17,481 +20,273 @@ class NoteViewScreen extends StatelessWidget {
     required this.onToggleFavorite,
   });
 
-  // Fonction pour déterminer si une couleur est claire ou sombre
-  bool _isLightColor(Color color) {
-    // Calcul de la luminosité relative (formule standard)
-    double luminance =
-        (0.299 * color.red + 0.587 * color.green + 0.114 * color.blue) / 255;
-    return luminance > 0.5;
+  @override
+  State<NoteViewScreen> createState() => _NoteViewScreenState();
+}
+
+class _NoteViewScreenState extends State<NoteViewScreen>
+    with TickerProviderStateMixin {
+  // Typewriter state
+  String _displayedTitle = '';
+  String _displayedContent = '';
+  int _currentTitleIndex = 0;
+  int _currentContentIndex = 0;
+  Timer? _typeTimer;
+
+  // Story mode
+  bool _titleComplete = false;
+  bool _contentComplete = false;
+  bool _waitingForTap = false;
+  bool _storyFinished = false;
+  int _chunkSize = 150; // Caracteres par chunk
+  int _currentChunkEnd = 0;
+
+  // Animation
+  late AnimationController _cursorController;
+  late AnimationController _finishedController;
+  late Animation<double> _finishedScale;
+
+  // Vitesse de frappe (ms par caractere)
+  final int _typeSpeed = 25;
+
+  @override
+  void initState() {
+    super.initState();
+
+    _cursorController = AnimationController(
+      duration: const Duration(milliseconds: 530),
+      vsync: this,
+    )..repeat(reverse: true);
+
+    _finishedController = AnimationController(
+      duration: const Duration(milliseconds: 600),
+      vsync: this,
+    );
+
+    _finishedScale = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(parent: _finishedController, curve: Curves.elasticOut),
+    );
+
+    // Demarrer l'effet typewriter
+    _startTypewriter();
   }
 
-  // Fonction pour obtenir une couleur de texte contrastée
-  Color _getContrastTextColor(Color backgroundColor) {
-    if (_isLightColor(backgroundColor)) {
-      // Pour les couleurs claires, utiliser du texte sombre
-      return Colors.black87;
+  @override
+  void dispose() {
+    _typeTimer?.cancel();
+    _cursorController.dispose();
+    _finishedController.dispose();
+    super.dispose();
+  }
+
+  void _startTypewriter() {
+    // Commencer par le titre
+    if (widget.note.title.isNotEmpty) {
+      _typeTitle();
     } else {
-      // Pour les couleurs sombres, utiliser du texte clair
-      return Colors.white;
+      _titleComplete = true;
+      _startContentTypewriter();
     }
+  }
+
+  void _typeTitle() {
+    _typeTimer = Timer.periodic(Duration(milliseconds: _typeSpeed), (timer) {
+      if (_currentTitleIndex < widget.note.title.length) {
+        setState(() {
+          _displayedTitle =
+              widget.note.title.substring(0, _currentTitleIndex + 1);
+          _currentTitleIndex++;
+        });
+      } else {
+        timer.cancel();
+        setState(() => _titleComplete = true);
+        // Petite pause puis demarrer le contenu
+        Future.delayed(const Duration(milliseconds: 400), () {
+          _startContentTypewriter();
+        });
+      }
+    });
+  }
+
+  void _startContentTypewriter() {
+    if (widget.note.content.isEmpty) {
+      _finishStory();
+      return;
+    }
+
+    _currentChunkEnd = _chunkSize.clamp(0, widget.note.content.length);
+    _typeContent();
+  }
+
+  void _typeContent() {
+    _typeTimer = Timer.periodic(Duration(milliseconds: _typeSpeed), (timer) {
+      if (_currentContentIndex < _currentChunkEnd) {
+        setState(() {
+          _displayedContent =
+              widget.note.content.substring(0, _currentContentIndex + 1);
+          _currentContentIndex++;
+        });
+      } else {
+        timer.cancel();
+
+        // Verifier si on a encore du contenu
+        if (_currentContentIndex >= widget.note.content.length) {
+          _finishStory();
+        } else {
+          // Attendre un tap pour continuer
+          setState(() => _waitingForTap = true);
+        }
+      }
+    });
+  }
+
+  void _continueStory() {
+    if (!_waitingForTap) return;
+
+    setState(() => _waitingForTap = false);
+
+    // Calculer le prochain chunk
+    _currentChunkEnd = (_currentContentIndex + _chunkSize)
+        .clamp(0, widget.note.content.length);
+
+    _typeContent();
+  }
+
+  void _finishStory() {
+    setState(() {
+      _contentComplete = true;
+      _storyFinished = true;
+    });
+    _finishedController.forward();
+  }
+
+  void _skipToEnd() {
+    _typeTimer?.cancel();
+    setState(() {
+      _displayedTitle = widget.note.title;
+      _displayedContent = widget.note.content;
+      _titleComplete = true;
+      _contentComplete = true;
+      _waitingForTap = false;
+      _storyFinished = true;
+    });
+    _finishedController.forward();
   }
 
   @override
   Widget build(BuildContext context) {
-    final heroTextColor = _getContrastTextColor(note.color);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final bgColor = isDark ? AppTheme.bgDark : widget.note.color;
+    final textColor = _getTextColor(bgColor, isDark);
+
+    SystemChrome.setSystemUIOverlayStyle(SystemUiOverlayStyle(
+      statusBarColor: AppTheme.skyBlue,
+      statusBarIconBrightness: Brightness.light,
+    ));
 
     return Scaffold(
-      body: CustomScrollView(
-        slivers: [
-          // Hero banner avec image ou couleur
-          SliverAppBar(
-            expandedHeight: 250,
-            floating: false,
-            pinned: true,
-            backgroundColor: note.color,
-            elevation: 0,
-            leading: IconButton(
-              onPressed: () => Navigator.pop(context),
-              icon: Icon(
-                Icons.arrow_back,
-                color:
-                    note.imagePaths.isNotEmpty ? Colors.white : heroTextColor,
-              ),
-            ),
-            actions: [
-              // Bouton favoris
-              IconButton(
-                onPressed: onToggleFavorite,
-                icon: Icon(
-                  note.isFavorite ? Icons.favorite : Icons.favorite_border,
-                  color:
-                      note.imagePaths.isNotEmpty ? Colors.white : heroTextColor,
-                  size: 28,
-                ),
-              ),
-            ],
-            flexibleSpace: FlexibleSpaceBar(
-              background: note.imagePaths.isNotEmpty
-                  ? Stack(
-                      fit: StackFit.expand,
-                      children: [
-                        // Image principale en hero banner
-                        Container(
-                          decoration: BoxDecoration(
-                            image: DecorationImage(
-                              image: FileImage(File(note.imagePaths.first)),
-                              fit: BoxFit.cover,
+      backgroundColor: bgColor,
+      body: SafeArea(
+        child: GestureDetector(
+          onTap: _waitingForTap ? _continueStory : null,
+          behavior: HitTestBehavior.opaque,
+          child: Column(
+            children: [
+              _buildAppBar(context, textColor, isDark),
+              Expanded(
+                child: Stack(
+                  children: [
+                    SingleChildScrollView(
+                      padding: const EdgeInsets.symmetric(horizontal: 24),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // Images (affichees directement)
+                          if (widget.note.imagePaths.isNotEmpty) ...[
+                            ImageGalleryEditor(
+                              imagePaths: widget.note.imagePaths,
+                              textColor: textColor,
+                              readOnly: true,
                             ),
-                          ),
-                        ),
-                        // Overlay pour améliorer la lisibilité
-                        Container(
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              begin: Alignment.topCenter,
-                              end: Alignment.bottomCenter,
-                              colors: [
-                                Colors.transparent,
-                                Colors.black.withOpacity(0.4),
+                            const SizedBox(height: 24),
+                          ],
+
+                          // Meta info
+                          _buildMeta(textColor),
+                          const SizedBox(height: 20),
+
+                          // Titre avec effet typewriter
+                          if (widget.note.title.isNotEmpty) ...[
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.end,
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    _displayedTitle,
+                                    style: TextStyle(
+                                      fontSize: 28,
+                                      fontWeight: FontWeight.w700,
+                                      color: textColor,
+                                      height: 1.25,
+                                    ),
+                                  ),
+                                ),
+                                if (!_titleComplete)
+                                  _buildCursor(textColor, large: true),
                               ],
                             ),
-                          ),
-                        ),
-                        // Informations de la note sur l'image
-                        Positioned(
-                          bottom: 20,
-                          left: 20,
-                          right: 20,
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              if (note.title.isNotEmpty)
-                                Text(
-                                  note.title,
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 28,
-                                    fontWeight: FontWeight.bold,
-                                    shadows: [
-                                      Shadow(
-                                        offset: Offset(0, 2),
-                                        blurRadius: 4,
-                                        color: Colors.black54,
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              const SizedBox(height: 8),
-                              Text(
-                                'Modifié ${DateFormatter.formatRelativeDate(note.modifiedAt)}',
-                                style: TextStyle(
-                                  color: Colors.white.withOpacity(0.9),
-                                  fontSize: 14,
-                                  shadows: [
-                                    Shadow(
-                                      offset: const Offset(0, 1),
-                                      blurRadius: 2,
-                                      color: Colors.black54,
+                            const SizedBox(height: 20),
+                          ],
+
+                          // Contenu avec effet typewriter
+                          if (widget.note.content.isNotEmpty) ...[
+                            RichText(
+                              text: TextSpan(
+                                children: [
+                                  TextSpan(
+                                    text: _displayedContent,
+                                    style: TextStyle(
+                                      fontSize: 16,
+                                      color: textColor.withOpacity(0.85),
+                                      height: 1.8,
+                                      fontFamily: 'Georgia',
                                     ),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    )
-                  : Container(
-                      decoration: BoxDecoration(
-                        color: note.color,
-                        gradient: LinearGradient(
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                          colors: [
-                            note.color,
-                            note.color.withOpacity(0.8),
-                          ],
-                        ),
-                      ),
-                      child: Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(
-                              Icons.image,
-                              size: 64,
-                              color: heroTextColor.withOpacity(0.3),
-                            ),
-                            const SizedBox(height: 16),
-                            if (note.title.isNotEmpty)
-                              Text(
-                                note.title,
-                                style: TextStyle(
-                                  color: heroTextColor,
-                                  fontSize: 28,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                                textAlign: TextAlign.center,
-                              ),
-                            const SizedBox(height: 8),
-                            Text(
-                              'Modifié ${DateFormatter.formatRelativeDate(note.modifiedAt)}',
-                              style: TextStyle(
-                                color: heroTextColor.withOpacity(0.9),
-                                fontSize: 14,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-            ),
-          ),
-
-          // Contenu de la note
-          SliverPadding(
-            padding: const EdgeInsets.all(20),
-            sliver: SliverList(
-              delegate: SliverChildListDelegate([
-                // Titre (si pas d'image ou titre différent)
-                if (note.imagePaths.isEmpty || note.title.isEmpty) ...[
-                  Text(
-                    note.title.isNotEmpty ? note.title : 'Sans titre',
-                    style: TextStyle(
-                      fontSize: 28,
-                      fontWeight: FontWeight.bold,
-                      color: Theme.of(context).colorScheme.onSurface,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Modifié ${DateFormatter.formatRelativeDate(note.modifiedAt)}',
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: Theme.of(context)
-                          .colorScheme
-                          .onSurface
-                          .withOpacity(0.6),
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-                ],
-
-                // Contenu de la note
-                if (note.content.isNotEmpty) ...[
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(20),
-                    decoration: BoxDecoration(
-                      color: Theme.of(context).colorScheme.surface,
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(
-                        color: Theme.of(context)
-                            .colorScheme
-                            .outline
-                            .withOpacity(0.1),
-                      ),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withOpacity(0.05),
-                          blurRadius: 10,
-                          offset: const Offset(0, 2),
-                        ),
-                      ],
-                    ),
-                    child: Text(
-                      note.content,
-                      style: TextStyle(
-                        fontSize: 16,
-                        height: 1.6,
-                        color: Theme.of(context).colorScheme.onSurface,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-                ],
-
-                // Galerie d'images (si il y en a plus d'une)
-                if (note.imagePaths.length > 1) ...[
-                  Container(
-                    padding: const EdgeInsets.all(20),
-                    decoration: BoxDecoration(
-                      color: Theme.of(context).colorScheme.surface,
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(
-                        color: Theme.of(context)
-                            .colorScheme
-                            .outline
-                            .withOpacity(0.1),
-                      ),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Icon(
-                              Icons.photo_library,
-                              color: Theme.of(context).colorScheme.primary,
-                              size: 20,
-                            ),
-                            const SizedBox(width: 8),
-                            Text(
-                              'Galerie d\'images',
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w600,
-                                color: Theme.of(context).colorScheme.onSurface,
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 16),
-                        SizedBox(
-                          height: 120,
-                          child: ListView.builder(
-                            scrollDirection: Axis.horizontal,
-                            itemCount: note.imagePaths.length,
-                            itemBuilder: (context, index) {
-                              return Container(
-                                margin: const EdgeInsets.only(right: 12),
-                                child: ClipRRect(
-                                  borderRadius: BorderRadius.circular(12),
-                                  child: Image.file(
-                                    File(note.imagePaths[index]),
-                                    width: 120,
-                                    height: 120,
-                                    fit: BoxFit.cover,
                                   ),
-                                ),
-                              );
-                            },
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-                ],
+                                  if (!_contentComplete && _titleComplete)
+                                    WidgetSpan(
+                                      child: _buildCursor(textColor),
+                                    ),
+                                ],
+                              ),
+                            ),
+                          ],
 
-                // Informations de la note
-                Container(
-                  padding: const EdgeInsets.all(20),
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.surface,
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(
-                      color: Theme.of(context)
-                          .colorScheme
-                          .outline
-                          .withOpacity(0.1),
-                    ),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Informations',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                          color: Theme.of(context).colorScheme.onSurface,
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      Row(
-                        children: [
-                          Icon(
-                            Icons.calendar_today,
-                            size: 16,
-                            color: Theme.of(context)
-                                .colorScheme
-                                .onSurface
-                                .withOpacity(0.6),
-                          ),
-                          const SizedBox(width: 8),
-                          Text(
-                            'Créé le ${DateFormatter.formatFullDate(note.createdAt)}',
-                            style: TextStyle(
-                              fontSize: 14,
-                              color: Theme.of(context)
-                                  .colorScheme
-                                  .onSurface
-                                  .withOpacity(0.6),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          Icon(
-                            Icons.edit,
-                            size: 16,
-                            color: Theme.of(context)
-                                .colorScheme
-                                .onSurface
-                                .withOpacity(0.6),
-                          ),
-                          const SizedBox(width: 8),
-                          Text(
-                            'Modifié le ${DateFormatter.formatFullDate(note.modifiedAt)}',
-                            style: TextStyle(
-                              fontSize: 14,
-                              color: Theme.of(context)
-                                  .colorScheme
-                                  .onSurface
-                                  .withOpacity(0.6),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          Icon(
-                            Icons.image,
-                            size: 16,
-                            color: Theme.of(context)
-                                .colorScheme
-                                .onSurface
-                                .withOpacity(0.6),
-                          ),
-                          const SizedBox(width: 8),
-                          Text(
-                            '${note.imagePaths.length} image${note.imagePaths.length > 1 ? 's' : ''}',
-                            style: TextStyle(
-                              fontSize: 14,
-                              color: Theme.of(context)
-                                  .colorScheme
-                                  .onSurface
-                                  .withOpacity(0.6),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 32),
-              ]),
-            ),
-          ),
-        ],
-      ),
+                          // "Tap pour continuer"
+                          if (_waitingForTap)
+                            _buildTapToContinue(textColor, isDark),
 
-      // Boutons d'action en bas
-      bottomNavigationBar: Container(
-        padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          color: Theme.of(context).colorScheme.surface,
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.1),
-              blurRadius: 10,
-              offset: const Offset(0, -2),
-            ),
-          ],
-        ),
-        child: SafeArea(
-          child: Row(
-            children: [
-              // Bouton Éditer
-              Expanded(
-                child: ElevatedButton.icon(
-                  onPressed: onEdit,
-                  icon: const Icon(Icons.edit),
-                  label: const Text('Éditer'),
-                  style: ElevatedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 16),
+                          // "Termine" - fin de l'histoire
+                          if (_storyFinished) _buildFinished(textColor, isDark),
 
-              // Bouton Supprimer
-              Expanded(
-                child: ElevatedButton.icon(
-                  onPressed: () {
-                    showDialog(
-                      context: context,
-                      builder: (context) => AlertDialog(
-                        title: const Text('Supprimer la note'),
-                        content: const Text(
-                          'Êtes-vous sûr de vouloir supprimer cette note ? Cette action est irréversible.',
-                        ),
-                        actions: [
-                          TextButton(
-                            onPressed: () => Navigator.pop(context),
-                            child: const Text('Annuler'),
-                          ),
-                          TextButton(
-                            onPressed: () {
-                              Navigator.pop(context);
-                              onDelete();
-                            },
-                            style: TextButton.styleFrom(
-                              foregroundColor: Colors.red,
-                            ),
-                            child: const Text('Supprimer'),
-                          ),
+                          // Empty state
+                          if (widget.note.title.isEmpty &&
+                              widget.note.content.isEmpty &&
+                              widget.note.imagePaths.isEmpty)
+                            _buildEmptyState(textColor),
+
+                          const SizedBox(height: 100),
                         ],
                       ),
-                    );
-                  },
-                  icon: const Icon(Icons.delete),
-                  label: const Text('Supprimer'),
-                  style: ElevatedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    backgroundColor: Colors.red,
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
                     ),
-                  ),
+
+                    // Bouton skip
+                    if (!_storyFinished)
+                      Positioned(
+                        bottom: 20,
+                        right: 20,
+                        child: _buildSkipButton(isDark),
+                      ),
+                  ],
                 ),
               ),
             ],
@@ -499,5 +294,322 @@ class NoteViewScreen extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  Widget _buildCursor(Color textColor, {bool large = false}) {
+    return AnimatedBuilder(
+      animation: _cursorController,
+      builder: (context, child) {
+        return Opacity(
+          opacity: _cursorController.value,
+          child: Container(
+            width: large ? 3 : 2,
+            height: large ? 30 : 20,
+            margin: const EdgeInsets.only(left: 2, bottom: 2),
+            decoration: BoxDecoration(
+              color: AppTheme.skyBlue,
+              borderRadius: BorderRadius.circular(1),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildTapToContinue(Color textColor, bool isDark) {
+    return Container(
+      margin: const EdgeInsets.only(top: 40),
+      child: Center(
+        child: TweenAnimationBuilder<double>(
+          tween: Tween(begin: 0.8, end: 1.0),
+          duration: const Duration(milliseconds: 800),
+          curve: Curves.easeInOut,
+          builder: (context, value, child) {
+            return Transform.scale(
+              scale: value,
+              child: child,
+            );
+          },
+          onEnd: () {}, // Pour faire boucler l'animation
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+            decoration: BoxDecoration(
+              color: AppTheme.skyBlue.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(30),
+              border: Border.all(
+                color: AppTheme.skyBlue.withOpacity(0.3),
+                width: 1.5,
+              ),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.touch_app_rounded,
+                  color: AppTheme.skyBlue,
+                  size: 22,
+                ),
+                const SizedBox(width: 10),
+                Text(
+                  'Touchez pour continuer...',
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                    color: AppTheme.skyBlue,
+                    letterSpacing: 0.3,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFinished(Color textColor, bool isDark) {
+    return Container(
+      margin: const EdgeInsets.only(top: 50),
+      child: Center(
+        child: ScaleTransition(
+          scale: _finishedScale,
+          child: Column(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: AppTheme.skyBlue.withOpacity(0.1),
+                ),
+                child: Icon(
+                  Icons.auto_stories_rounded,
+                  color: AppTheme.skyBlue,
+                  size: 40,
+                ),
+              ),
+              const SizedBox(height: 20),
+              Text(
+                'Termine',
+                style: TextStyle(
+                  fontSize: 32,
+                  fontWeight: FontWeight.w800,
+                  color: AppTheme.skyBlue,
+                  letterSpacing: 1,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Fin de la note.',
+                style: TextStyle(
+                  fontSize: 14,
+                  color: textColor.withOpacity(0.5),
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSkipButton(bool isDark) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: _skipToEnd,
+        borderRadius: BorderRadius.circular(25),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          decoration: BoxDecoration(
+            color: isDark
+                ? Colors.white.withOpacity(0.1)
+                : Colors.black.withOpacity(0.05),
+            borderRadius: BorderRadius.circular(25),
+            border: Border.all(
+              color: isDark
+                  ? Colors.white.withOpacity(0.2)
+                  : Colors.black.withOpacity(0.1),
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.skip_next_rounded,
+                size: 18,
+                color: isDark ? Colors.white70 : Colors.black54,
+              ),
+              const SizedBox(width: 6),
+              Text(
+                'Passer',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: isDark ? Colors.white70 : Colors.black54,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEmptyState(Color textColor) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 80),
+        child: Column(
+          children: [
+            Icon(Icons.note_outlined,
+                size: 64, color: textColor.withOpacity(0.25)),
+            const SizedBox(height: 16),
+            Text(
+              'Note vide',
+              style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w600,
+                  color: textColor.withOpacity(0.4)),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAppBar(BuildContext context, Color textColor, bool isDark) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(8, 8, 16, 8),
+      child: Row(
+        children: [
+          IconButton(
+            onPressed: () => Navigator.pop(context),
+            icon: Icon(Icons.arrow_back_rounded, color: textColor),
+          ),
+          const Spacer(),
+          _buildToolButton(
+              Icons.edit_outlined, textColor, widget.onEdit, isDark),
+          const SizedBox(width: 4),
+          _buildToolButton(Icons.delete_outline_rounded, textColor,
+              () => _confirmDelete(context), isDark),
+          const SizedBox(width: 4),
+          _buildToolButton(
+            widget.note.isFavorite
+                ? Icons.favorite_rounded
+                : Icons.favorite_border_rounded,
+            widget.note.isFavorite ? AppTheme.skyBlue : textColor,
+            widget.onToggleFavorite,
+            isDark,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildToolButton(
+      IconData icon, Color color, VoidCallback onTap, bool isDark) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          width: 44,
+          height: 44,
+          decoration: BoxDecoration(
+            color: isDark
+                ? Colors.white.withOpacity(0.1)
+                : Colors.black.withOpacity(0.05),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Icon(icon, color: color, size: 22),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMeta(Color textColor) {
+    return Row(
+      children: [
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          decoration: BoxDecoration(
+            color: textColor.withOpacity(0.08),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.schedule_rounded,
+                  size: 14, color: textColor.withOpacity(0.6)),
+              const SizedBox(width: 6),
+              Text(
+                DateFormatter.formatRelativeDate(widget.note.modifiedAt),
+                style: TextStyle(
+                    fontSize: 12,
+                    color: textColor.withOpacity(0.6),
+                    fontWeight: FontWeight.w500),
+              ),
+            ],
+          ),
+        ),
+        if (widget.note.isFavorite) ...[
+          const SizedBox(width: 8),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            decoration: BoxDecoration(
+              color: AppTheme.skyBlue.withOpacity(0.15),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.favorite_rounded, size: 14, color: AppTheme.skyBlue),
+                const SizedBox(width: 6),
+                Text('Favori',
+                    style: TextStyle(
+                        fontSize: 12,
+                        color: AppTheme.skyBlue,
+                        fontWeight: FontWeight.w600)),
+              ],
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  void _confirmDelete(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text('Supprimer cette note ?',
+            style: TextStyle(fontWeight: FontWeight.w700)),
+        content: const Text('Cette action est irreversible.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text('Annuler',
+                style: TextStyle(
+                    color: AppTheme.textMuted, fontWeight: FontWeight.w600)),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(context);
+              widget.onDelete();
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: AppTheme.skyBlue),
+            child: const Text('Supprimer'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Color _getTextColor(Color bg, bool isDark) {
+    if (isDark) return AppTheme.textLight;
+    return bg.computeLuminance() > 0.5 ? AppTheme.textDark : Colors.white;
   }
 }

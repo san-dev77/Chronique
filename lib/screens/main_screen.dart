@@ -1,14 +1,18 @@
 import 'package:flutter/material.dart';
 import 'notes_screen.dart';
 import 'favorites_screen.dart';
+import 'memories_screen.dart';
 import 'settings_screen.dart';
 import '../services/auth_service.dart';
 import '../services/cloud_sync_service.dart';
 import '../services/connectivity_service.dart';
+import '../theme/app_theme.dart';
 import 'dart:async';
 
 class MainScreen extends StatefulWidget {
-  const MainScreen({super.key});
+  final int initialTab;
+
+  const MainScreen({super.key, this.initialTab = 0});
 
   @override
   State<MainScreen> createState() => _MainScreenState();
@@ -17,211 +21,123 @@ class MainScreen extends StatefulWidget {
 enum SyncStatus { idle, syncing, success, offline, error }
 
 class _MainScreenState extends State<MainScreen> {
-  int _currentIndex = 0;
+  late int _currentIndex;
   SyncStatus _syncStatus = SyncStatus.idle;
   bool _isConnected = true;
-  StreamSubscription? _connectivitySubscription;
+  StreamSubscription? _connectivitySub;
 
-  final List<Widget> _screens = [
-    const NotesScreen(),
-    const FavoritesScreen(),
-    const SettingsScreen(),
+  final _screens = const [
+    NotesScreen(),
+    MemoriesScreen(),
+    FavoritesScreen(),
+    SettingsScreen()
   ];
 
   @override
   void initState() {
     super.initState();
-
-    // Écouter les changements de connectivité
+    _currentIndex = widget.initialTab;
     _isConnected = ConnectivityService.instance.isConnected;
-    _connectivitySubscription =
-        ConnectivityService.instance.connectivityStream.listen((connected) {
-      setState(() => _isConnected = connected);
-
-      // Si connexion revenue et utilisateur connecté, sync auto
-      if (connected && AuthService.instance.isSignedIn) {
-        _autoSyncOnStart();
-      }
+    _connectivitySub =
+        ConnectivityService.instance.connectivityStream.listen((c) {
+      setState(() => _isConnected = c);
+      if (c && AuthService.instance.isSignedIn) _sync();
     });
-
-    // Sync automatique au démarrage si connecté
-    _autoSyncOnStart();
+    _sync();
   }
 
   @override
   void dispose() {
-    _connectivitySubscription?.cancel();
+    _connectivitySub?.cancel();
     super.dispose();
   }
 
-  Future<void> _autoSyncOnStart() async {
-    if (!AuthService.instance.isSignedIn) return;
-    if (!_isConnected) {
-      setState(() => _syncStatus = SyncStatus.offline);
+  Future<void> _sync() async {
+    if (!AuthService.instance.isSignedIn || !_isConnected) {
+      setState(() =>
+          _syncStatus = _isConnected ? SyncStatus.idle : SyncStatus.offline);
       return;
     }
-
     setState(() => _syncStatus = SyncStatus.syncing);
-
     try {
       await CloudSyncService.instance.syncAll();
-      if (mounted) {
-        setState(() => _syncStatus = SyncStatus.success);
-      }
-    } catch (e) {
-      print('Erreur sync auto démarrage: $e');
-      if (mounted) {
-        setState(() => _syncStatus = SyncStatus.error);
-      }
+      if (mounted) setState(() => _syncStatus = SyncStatus.success);
+    } catch (_) {
+      if (mounted) setState(() => _syncStatus = SyncStatus.error);
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final isSignedIn = AuthService.instance.isSignedIn;
 
     return Scaffold(
       body: Stack(
         children: [
           _screens[_currentIndex],
-
-          // Bannière "Connectez-vous" si pas de compte
+          // Banner connexion
           if (!isSignedIn)
             Positioned(
               top: 0,
               left: 0,
               right: 0,
-              child: Material(
-                color: Colors.transparent,
-                child: InkWell(
-                  onTap: () {
-                    Navigator.pushNamed(context, '/welcome');
-                  },
-                  child: Container(
-                    padding: EdgeInsets.only(
-                      top: MediaQuery.of(context).padding.top + 8,
-                      bottom: 12,
-                      left: 16,
-                      right: 16,
-                    ),
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [
-                          Colors.orange.shade600,
-                          Colors.orange.shade500,
-                        ],
-                      ),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withOpacity(0.15),
-                          blurRadius: 8,
-                          offset: const Offset(0, 2),
-                        ),
-                      ],
-                    ),
-                    child: Row(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(6),
-                          decoration: BoxDecoration(
-                            color: Colors.white.withOpacity(0.2),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: const Icon(
-                            Icons.cloud_off,
-                            size: 20,
-                            color: Colors.white,
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        const Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(
-                                'Notes locales uniquement',
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                              SizedBox(height: 2),
-                              Text(
-                                'Connectez-vous pour synchroniser',
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const Icon(
-                          Icons.arrow_forward_ios,
-                          size: 14,
-                          color: Colors.white,
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
+              child: _buildConnectionBanner(context),
             ),
-
-          // Indicateur de sync en haut à droite (si connecté)
+          // Badge sync
           if (isSignedIn)
             Positioned(
-              top: MediaQuery.of(context).padding.top + 8,
+              top: MediaQuery.of(context).padding.top + 10,
               right: 16,
               child: _buildSyncBadge(),
             ),
         ],
       ),
-      bottomNavigationBar: Container(
-        margin: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: Theme.of(context).colorScheme.surface,
-          borderRadius: BorderRadius.circular(25),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.1),
-              blurRadius: 20,
-              offset: const Offset(0, 10),
-            ),
-          ],
-        ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(25),
-          child: BottomNavigationBar(
-            currentIndex: _currentIndex,
-            onTap: (index) => setState(() => _currentIndex = index),
-            type: BottomNavigationBarType.fixed,
-            backgroundColor: Colors.transparent,
-            elevation: 0,
-            selectedItemColor: Theme.of(context).colorScheme.primary,
-            unselectedItemColor:
-                Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
-            selectedLabelStyle: const TextStyle(fontWeight: FontWeight.w600),
-            unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w500),
-            items: const [
-              BottomNavigationBarItem(
-                icon: Icon(Icons.note_alt_outlined),
-                activeIcon: Icon(Icons.note_alt),
-                label: 'Notes',
+      bottomNavigationBar: _buildNav(isDark),
+    );
+  }
+
+  Widget _buildConnectionBanner(BuildContext context) {
+    return Material(
+      color: AppTheme.skyBlue,
+      child: InkWell(
+        onTap: () => Navigator.pushNamed(context, '/welcome'),
+        child: Container(
+          padding: EdgeInsets.only(
+            top: MediaQuery.of(context).padding.top + 8,
+            bottom: 12,
+            left: 20,
+            right: 20,
+          ),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.25),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(Icons.cloud_off_rounded,
+                    size: 20, color: Colors.white),
               ),
-              BottomNavigationBarItem(
-                icon: Icon(Icons.favorite_outline),
-                activeIcon: Icon(Icons.favorite),
-                label: 'Favoris',
+              const SizedBox(width: 14),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text('Mode hors ligne',
+                        style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700)),
+                    Text('Connectez-vous pour synchroniser',
+                        style: TextStyle(color: Colors.white, fontSize: 12)),
+                  ],
+                ),
               ),
-              BottomNavigationBarItem(
-                icon: Icon(Icons.settings_outlined),
-                activeIcon: Icon(Icons.settings),
-                label: 'Paramètres',
-              ),
+              const Icon(Icons.arrow_forward_ios_rounded,
+                  size: 16, color: Colors.white),
             ],
           ),
         ),
@@ -230,88 +146,261 @@ class _MainScreenState extends State<MainScreen> {
   }
 
   Widget _buildSyncBadge() {
-    Color badgeColor;
-    IconData badgeIcon;
-    String badgeText;
+    final (color, icon, text) = switch (_syncStatus) {
+      SyncStatus.syncing => (AppTheme.skyBlue, Icons.sync_rounded, 'Sync...'),
+      SyncStatus.success => (
+          AppTheme.skyBlue,
+          Icons.cloud_done_rounded,
+          'A jour'
+        ),
+      SyncStatus.error => (AppTheme.skyBlue, Icons.cloud_off_rounded, 'Erreur'),
+      SyncStatus.offline => (
+          AppTheme.skyBlue,
+          Icons.cloud_off_rounded,
+          'Hors ligne'
+        ),
+      _ => (AppTheme.textMuted, Icons.cloud_queue_rounded, 'En attente'),
+    };
 
-    if (!_isConnected) {
-      // Pas de connexion internet
-      badgeColor = Colors.orange.shade600;
-      badgeIcon = Icons.cloud_off;
-      badgeText = 'Hors ligne';
-    } else {
-      switch (_syncStatus) {
-        case SyncStatus.syncing:
-          badgeColor = Colors.blue.shade600;
-          badgeIcon = Icons.sync;
-          badgeText = 'Sync...';
-          break;
-        case SyncStatus.success:
-          badgeColor = Colors.green.shade600;
-          badgeIcon = Icons.cloud_done;
-          badgeText = 'Sync OK';
-          break;
-        case SyncStatus.error:
-          badgeColor = Colors.red.shade600;
-          badgeIcon = Icons.cloud_off;
-          badgeText = 'Erreur';
-          break;
-        case SyncStatus.offline:
-          badgeColor = Colors.orange.shade600;
-          badgeIcon = Icons.cloud_off;
-          badgeText = 'Hors ligne';
-          break;
-        default:
-          badgeColor = Colors.grey.shade600;
-          badgeIcon = Icons.cloud_queue;
-          badgeText = 'En attente';
-      }
+    return GestureDetector(
+      onTap: _showSyncInfoDialog,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        decoration: BoxDecoration(
+          color: color,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+                color: color.withOpacity(0.4),
+                blurRadius: 12,
+                offset: const Offset(0, 3))
+          ],
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _syncStatus == SyncStatus.syncing
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(
+                        strokeWidth: 2, color: Colors.white))
+                : Icon(icon, size: 18, color: Colors.white),
+            const SizedBox(width: 8),
+            Text(text,
+                style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600)),
+            const SizedBox(width: 4),
+            const Icon(Icons.info_outline_rounded,
+                size: 14, color: Colors.white70),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showSyncInfoDialog() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    String title;
+    String description;
+    IconData statusIcon;
+
+    switch (_syncStatus) {
+      case SyncStatus.syncing:
+        title = 'Synchronisation en cours';
+        description =
+            'Vos notes sont en train d\'etre synchronisees avec le cloud. Patientez quelques instants.';
+        statusIcon = Icons.sync_rounded;
+        break;
+      case SyncStatus.success:
+        title = 'Synchronisation reussie';
+        description =
+            'Toutes vos notes sont a jour et sauvegardees dans le cloud. Vous pouvez y acceder depuis n\'importe quel appareil connecte a votre compte.';
+        statusIcon = Icons.cloud_done_rounded;
+        break;
+      case SyncStatus.error:
+        title = 'Erreur de synchronisation';
+        description =
+            'Une erreur est survenue lors de la synchronisation. Verifiez votre connexion internet et reessayez.';
+        statusIcon = Icons.cloud_off_rounded;
+        break;
+      case SyncStatus.offline:
+        title = 'Mode hors ligne';
+        description =
+            'Vous n\'etes pas connecte a internet. Vos notes sont sauvegardees localement et seront synchronisees automatiquement des que vous serez en ligne.';
+        statusIcon = Icons.cloud_off_rounded;
+        break;
+      default:
+        title = 'En attente';
+        description =
+            'La synchronisation demarrera automatiquement lorsque vous serez connecte.';
+        statusIcon = Icons.cloud_queue_rounded;
     }
 
-    return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: 12,
-        vertical: 6,
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: AppTheme.skyBlue.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(statusIcon, color: AppTheme.skyBlue, size: 24),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Text(
+                title,
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                  color: isDark ? Colors.white : AppTheme.textDark,
+                ),
+              ),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              description,
+              style: TextStyle(
+                fontSize: 14,
+                height: 1.5,
+                color: isDark ? Colors.white70 : Colors.grey.shade700,
+              ),
+            ),
+            const SizedBox(height: 20),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AppTheme.skyBlue.withOpacity(0.08),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.lightbulb_outline_rounded,
+                      size: 18, color: AppTheme.skyBlue),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      'Connectez-vous pour synchroniser vos notes sur tous vos appareils.',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: isDark ? Colors.white60 : Colors.grey.shade600,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          if (_syncStatus == SyncStatus.error ||
+              _syncStatus == SyncStatus.offline)
+            TextButton.icon(
+              onPressed: () {
+                Navigator.pop(context);
+                _sync();
+              },
+              icon: const Icon(Icons.refresh_rounded, size: 18),
+              label: const Text('Reessayer'),
+            ),
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Compris'),
+          ),
+        ],
       ),
+    );
+  }
+
+  Widget _buildNav(bool isDark) {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 12, 16, 20),
+      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
       decoration: BoxDecoration(
-        color: badgeColor.withOpacity(0.95),
-        borderRadius: BorderRadius.circular(20),
+        color: AppTheme.skyBlue,
+        borderRadius: BorderRadius.circular(28),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.15),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
+            color: AppTheme.skyBlue.withOpacity(0.3),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
           ),
         ],
       ),
       child: Row(
-        mainAxisSize: MainAxisSize.min,
+        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: [
-          if (_syncStatus == SyncStatus.syncing)
-            const SizedBox(
-              width: 14,
-              height: 14,
-              child: CircularProgressIndicator(
-                strokeWidth: 2,
-                color: Colors.white,
-              ),
-            )
-          else
-            Icon(
-              badgeIcon,
-              size: 16,
-              color: Colors.white,
-            ),
-          const SizedBox(width: 6),
-          Text(
-            badgeText,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
+          _buildNavItem(0, Icons.note_alt_outlined, Icons.note_alt_rounded,
+              'Notes', isDark),
+          _buildNavItem(1, Icons.auto_awesome_outlined,
+              Icons.auto_awesome_rounded, 'Souvenirs', isDark),
+          _buildNavItem(2, Icons.favorite_outline_rounded,
+              Icons.favorite_rounded, 'Favoris', isDark),
+          _buildNavItem(3, Icons.settings_outlined, Icons.settings_rounded,
+              'Reglages', isDark),
         ],
+      ),
+    );
+  }
+
+  Widget _buildNavItem(int index, IconData icon, IconData activeIcon,
+      String label, bool isDark) {
+    final selected = _currentIndex == index;
+
+    return GestureDetector(
+      onTap: () => setState(() => _currentIndex = index),
+      behavior: HitTestBehavior.opaque,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 250),
+        curve: Curves.easeOutCubic,
+        padding: EdgeInsets.symmetric(
+          vertical: 10,
+          horizontal: selected ? 16 : 14,
+        ),
+        decoration: BoxDecoration(
+          color: selected ? Colors.white : Colors.transparent,
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              selected ? activeIcon : icon,
+              size: 26,
+              color: selected ? AppTheme.skyBlue : Colors.white,
+            ),
+            AnimatedSize(
+              duration: const Duration(milliseconds: 200),
+              curve: Curves.easeOutCubic,
+              child: selected
+                  ? Padding(
+                      padding: const EdgeInsets.only(left: 8),
+                      child: Text(
+                        label,
+                        style: TextStyle(
+                          color: AppTheme.skyBlue,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    )
+                  : const SizedBox.shrink(),
+            ),
+          ],
+        ),
       ),
     );
   }

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../theme/app_theme.dart';
 
 class ColorPicker extends StatelessWidget {
   final Color selectedColor;
@@ -12,60 +13,61 @@ class ColorPicker extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'Couleur: ',
-          style: TextStyle(
-            fontSize: 14,
-            color: Theme.of(context).colorScheme.onSurface,
-          ),
-        ),
-        const SizedBox(height: 8),
-        SizedBox(
-          height: 32,
-          child: ListView.builder(
-            scrollDirection: Axis.horizontal,
-            itemCount: Colors.primaries.length,
-            itemBuilder: (context, index) {
-              final color = Colors.primaries[index];
-              return GestureDetector(
-                onTap: () => onColorChanged(color),
-                child: Container(
-                  margin: const EdgeInsets.only(right: 8),
-                  width: 32,
-                  height: 32,
-                  decoration: BoxDecoration(
-                    color: color,
-                    shape: BoxShape.circle,
-                    border: Border.all(
-                      color: selectedColor == color
-                          ? Colors.black
-                          : Colors.grey.withOpacity(0.3),
-                      width: selectedColor == color ? 3 : 1,
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.1),
-                        blurRadius: 4,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
+    return GridView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 5,
+        crossAxisSpacing: 14,
+        mainAxisSpacing: 14,
+      ),
+      itemCount: AppTheme.noteColors.length,
+      itemBuilder: (context, index) {
+        final color = AppTheme.noteColors[index];
+        final isSelected = selectedColor.value == color.value;
+        final isWhite = color == Colors.white || color.value == 0xFFFFFFFF;
+
+        return GestureDetector(
+          onTap: () => onColorChanged(color),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            curve: Curves.easeOutCubic,
+            decoration: BoxDecoration(
+              color: color,
+              shape: BoxShape.circle,
+              border: Border.all(
+                color: isSelected
+                    ? AppTheme.skyBlue
+                    : (isWhite ? Colors.grey.shade300 : color.withOpacity(0.5)),
+                width: isSelected ? 3 : 2,
+              ),
+              boxShadow: [
+                if (isSelected)
+                  BoxShadow(
+                    color: AppTheme.skyBlue.withOpacity(0.4),
+                    blurRadius: 12,
+                    offset: const Offset(0, 4),
+                  )
+                else
+                  BoxShadow(
+                    color: color.withOpacity(0.4),
+                    blurRadius: 8,
+                    offset: const Offset(0, 3),
                   ),
-                  child: selectedColor == color
-                      ? const Icon(
-                          Icons.check,
-                          color: Colors.white,
-                          size: 18,
-                        )
-                      : null,
-                ),
-              );
-            },
+              ],
+            ),
+            child: isSelected
+                ? Icon(
+                    Icons.check_rounded,
+                    color: color.computeLuminance() > 0.5
+                        ? AppTheme.textDark
+                        : Colors.white,
+                    size: 24,
+                  )
+                : null,
           ),
-        ),
-      ],
+        );
+      },
     );
   }
 }
