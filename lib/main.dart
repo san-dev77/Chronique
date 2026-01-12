@@ -7,6 +7,7 @@ import 'screens/splash_screen_clean.dart';
 import 'screens/main_screen.dart';
 import 'screens/welcome_screen.dart';
 import 'screens/note_view_screen.dart';
+import 'screens/shared_note_view_screen.dart';
 import 'services/note_service.dart';
 import 'services/image_storage_service.dart';
 import 'services/connectivity_service.dart';
@@ -14,8 +15,15 @@ import 'services/memory_notification_service.dart';
 import 'services/background_task_service.dart';
 import 'services/accent_color_service.dart';
 import 'services/theme_service.dart';
+import 'services/auth_service.dart';
+import 'services/sharing_service.dart';
+import 'services/cloud_sync_service.dart'; // Import manquant
+import 'services/realtime_notification_service.dart';
 import 'theme/app_theme.dart';
 import 'firebase_options.dart';
+
+// Key globale pour la navigation (notamment depuis les notifications)
+final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -45,12 +53,8 @@ void main() async {
   // Initialiser le service de notifications de souvenirs
   try {
     await MemoryNotificationService.instance.init();
-    final hasPermission =
-        await MemoryNotificationService.instance.requestPermission();
-    debugPrint('Permission notifications: $hasPermission');
-    if (hasPermission) {
-      MemoryNotificationService.instance.checkAndNotifyMemories();
-    }
+    // On ne declenche plus checkAndNotifyMemories() ici car c'est trop intrusif a chaque demarrage.
+    // La tache de fond (BackgroundTaskService) s'en chargera de maniere plus discrete.
   } catch (e) {
     debugPrint('Notifications non disponibles: $e');
   }
@@ -88,17 +92,40 @@ class _NoteKeeperAppState extends State<NoteKeeperApp> {
     super.initState();
     // Configurer le callback pour ouvrir une note depuis la notification
     MemoryNotificationService.instance.onOpenNote = _openNote;
+    
+    // Écouter les changements d'état d'authentification pour isoler les données
+    AuthService.instance.authStateChanges.listen((user) async {
+      // Re-initialiser NoteService pour changer de box Hive (isolation des données)
+      await NoteService.instance.initializeForUser(user?.uid);
+      
+      if (user != null) {
+        // Commencer l'écoute des notifications temps réel
+        RealtimeNotificationService.instance.startListening();
+        
+        // Enregistrer l'utilisateur dans Firestore pour le partage
+        SharingService.instance.registerCurrentUser();
+        // Optionnel : déclencher une sync auto au changement de compte
+        try {
+          await CloudSyncService.instance.syncAll();
+        } catch (e) {
+          print('Erreur sync auto au switch: $e');
+        }
+      } else {
+        // Arrêter l'écoute si déconnecté
+        RealtimeNotificationService.instance.stopListening();
+      }
+    });
   }
 
   void _openNote(String noteId) async {
     debugPrint('Ouverture de la note depuis notification: $noteId');
 
-    // Récupérer la note par son ID
+    // 1. Chercher dans les notes locales
     final notes = NoteService.instance.getAllNotes();
     final note = notes.where((n) => n.id == noteId).firstOrNull;
 
     if (note != null) {
-      // Naviguer vers la vue de la note
+      // Naviguer vers la vue de la note locale
       navigatorKey.currentState?.push(
         MaterialPageRoute(
           builder: (context) => NoteViewScreen(
@@ -114,6 +141,17 @@ class _NoteKeeperAppState extends State<NoteKeeperApp> {
               );
             },
           ),
+        ),
+      );
+      return;
+    }
+
+    // 2. Chercher dans les notes partagées (si c'est un sharedNoteId)
+    final sharedNote = await SharingService.instance.getSharedNote(noteId);
+    if (sharedNote != null && mounted) {
+      navigatorKey.currentState?.push(
+        MaterialPageRoute(
+          builder: (context) => SharedNoteViewScreen(sharedNote: sharedNote),
         ),
       );
     }

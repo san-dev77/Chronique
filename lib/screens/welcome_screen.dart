@@ -174,7 +174,7 @@ class _WelcomeScreenState extends State<WelcomeScreen>
                             child: const Row(
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
-                                Icon(Icons.login,
+                                Icon(Icons.login_rounded,
                                     color: Colors.white, size: 24),
                                 SizedBox(width: 12),
                                 Text(
@@ -194,57 +194,21 @@ class _WelcomeScreenState extends State<WelcomeScreen>
 
                     const SizedBox(height: 16),
 
-                    // Bouton Continuer sans compte
+                    // Bouton Inscription
                     SecondaryButton(
-                      text: 'Continuer sans compte',
-                      icon: Icons.arrow_forward_rounded,
+                      text: 'Créer un compte',
+                      icon: Icons.person_add_rounded,
                       onPressed: () {
-                        Navigator.pushReplacementNamed(context, '/main');
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => const AuthLoginScreen(initialIsSignUp: true),
+                          ),
+                        );
                       },
                     ),
 
-                    const SizedBox(height: 24),
-
-                    // Info améliorée
-                    Container(
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: Colors.blue.shade50,
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(
-                          color: Colors.blue.shade100,
-                          width: 1,
-                        ),
-                      ),
-                      child: Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.all(8),
-                            decoration: BoxDecoration(
-                              color: Colors.blue.shade100,
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            child: Icon(
-                              Icons.info_outline,
-                              size: 20,
-                              color: Colors.blue.shade700,
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Text(
-                              'Sans compte, vos notes restent sur cet appareil',
-                              style: TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w500,
-                                color: Colors.blue.shade900,
-                                height: 1.3,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
+                    const SizedBox(height: 40),
 
                     const SizedBox(height: 32),
                   ],

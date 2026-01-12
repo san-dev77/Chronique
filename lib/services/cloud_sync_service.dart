@@ -157,6 +157,9 @@ class CloudSyncService {
     final report = SyncReport();
 
     try {
+      // Attendre que la base locale soit prête (isolation)
+      await NoteService.instance.waitReady();
+
       // 1. Récupérer les notes locales et cloud
       final localNotes = NoteService.instance.getAllNotes();
       final cloudNotes = await downloadAllNotes();

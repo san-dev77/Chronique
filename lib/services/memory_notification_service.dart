@@ -422,18 +422,18 @@ class MemoryNotificationService {
     }
   }
 
-  /// Envoie une notification de souvenir immédiate
-  Future<void> sendMemoryNotification(Note note,
-      {String? customMessage}) async {
+  /// Affiche une notification locale générique
+  Future<void> showLocalNotification({
+    required int id,
+    required String title,
+    required String body,
+    String? payload,
+  }) async {
     if (!_isAvailable) return;
 
     try {
       await init();
       if (!_isInitialized) return;
-
-      final random = Random();
-      final message = customMessage ??
-          _memoryMessages[random.nextInt(_memoryMessages.length)];
 
       const androidDetails = AndroidNotificationDetails(
         _channelId,
@@ -444,14 +444,6 @@ class MemoryNotificationService {
         playSound: true,
         enableVibration: true,
         largeIcon: DrawableResourceAndroidBitmap('@mipmap/launcher_icon'),
-        styleInformation: BigTextStyleInformation(''),
-        actions: <AndroidNotificationAction>[
-          AndroidNotificationAction(
-            'view_memory',
-            'Voir le moment',
-            showsUserInterface: true,
-          ),
-        ],
       );
 
       const iosDetails = DarwinNotificationDetails(
@@ -466,19 +458,34 @@ class MemoryNotificationService {
       );
 
       await _notifications.show(
-        note.id.hashCode,
-        message,
-        note.title.isNotEmpty
-            ? note.title
-            : (note.content.length > 50
-                ? '${note.content.substring(0, 50)}...'
-                : note.content),
+        id,
+        title,
+        body,
         details,
-        payload: note.id,
+        payload: payload,
       );
     } catch (e) {
-      debugPrint('Erreur notification: $e');
+      debugPrint('Erreur showLocalNotification: $e');
     }
+  }
+
+  /// Envoie une notification de souvenir immédiate
+  Future<void> sendMemoryNotification(Note note,
+      {String? customMessage}) async {
+    final random = Random();
+    final message = customMessage ??
+        _memoryMessages[random.nextInt(_memoryMessages.length)];
+
+    await showLocalNotification(
+      id: note.id.hashCode,
+      title: message,
+      body: note.title.isNotEmpty
+          ? note.title
+          : (note.content.length > 50
+              ? '${note.content.substring(0, 50)}...'
+              : note.content),
+      payload: note.id,
+    );
   }
 
   /// Vérifie si des souvenirs sont disponibles et envoie une notification

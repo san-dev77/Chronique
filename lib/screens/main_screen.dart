@@ -3,9 +3,11 @@ import 'notes_screen.dart';
 import 'favorites_screen.dart';
 import 'memories_screen.dart';
 import 'settings_screen.dart';
+import 'shared_notes_screen.dart';
 import '../services/auth_service.dart';
 import '../services/cloud_sync_service.dart';
 import '../services/connectivity_service.dart';
+import '../services/accent_color_service.dart';
 import '../theme/app_theme.dart';
 import 'dart:async';
 
@@ -28,6 +30,7 @@ class _MainScreenState extends State<MainScreen> {
 
   final _screens = const [
     NotesScreen(),
+    SharedNotesScreen(),
     MemoriesScreen(),
     FavoritesScreen(),
     SettingsScreen()
@@ -84,11 +87,11 @@ class _MainScreenState extends State<MainScreen> {
               right: 0,
               child: _buildConnectionBanner(context),
             ),
-          // Badge sync
-          if (isSignedIn)
+          // Badge sync (Affiche seulement en cas d'erreur ou offline)
+          if (isSignedIn && (_syncStatus == SyncStatus.error || _syncStatus == SyncStatus.offline))
             Positioned(
               top: MediaQuery.of(context).padding.top + 10,
-              right: 16,
+              left: 16,
               child: _buildSyncBadge(),
             ),
         ],
@@ -113,7 +116,7 @@ class _MainScreenState extends State<MainScreen> {
             children: [
               Container(
                 padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
+        decoration: BoxDecoration(
                   color: Colors.white.withOpacity(0.25),
                   borderRadius: BorderRadius.circular(10),
                 ),
@@ -208,32 +211,32 @@ class _MainScreenState extends State<MainScreen> {
     String description;
     IconData statusIcon;
 
-    switch (_syncStatus) {
-      case SyncStatus.syncing:
+      switch (_syncStatus) {
+        case SyncStatus.syncing:
         title = 'Synchronisation en cours';
         description =
             'Vos notes sont en train d\'etre synchronisees avec le cloud. Patientez quelques instants.';
         statusIcon = Icons.sync_rounded;
-        break;
-      case SyncStatus.success:
+          break;
+        case SyncStatus.success:
         title = 'Synchronisation reussie';
         description =
             'Toutes vos notes sont a jour et sauvegardees dans le cloud. Vous pouvez y acceder depuis n\'importe quel appareil connecte a votre compte.';
         statusIcon = Icons.cloud_done_rounded;
-        break;
-      case SyncStatus.error:
+          break;
+        case SyncStatus.error:
         title = 'Erreur de synchronisation';
         description =
             'Une erreur est survenue lors de la synchronisation. Verifiez votre connexion internet et reessayez.';
         statusIcon = Icons.cloud_off_rounded;
-        break;
-      case SyncStatus.offline:
+          break;
+        case SyncStatus.offline:
         title = 'Mode hors ligne';
         description =
             'Vous n\'etes pas connecte a internet. Vos notes sont sauvegardees localement et seront synchronisees automatiquement des que vous serez en ligne.';
         statusIcon = Icons.cloud_off_rounded;
-        break;
-      default:
+          break;
+        default:
         title = 'En attente';
         description =
             'La synchronisation demarrera automatiquement lorsque vous serez connecte.';
@@ -326,38 +329,46 @@ class _MainScreenState extends State<MainScreen> {
   }
 
   Widget _buildNav(bool isDark) {
-    return Container(
-      margin: const EdgeInsets.fromLTRB(16, 12, 16, 20),
-      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
-      decoration: BoxDecoration(
-        color: AppTheme.skyBlue,
-        borderRadius: BorderRadius.circular(28),
-        boxShadow: [
-          BoxShadow(
-            color: AppTheme.skyBlue.withOpacity(0.3),
-            blurRadius: 12,
-            offset: const Offset(0, 4),
+    return ListenableBuilder(
+      listenable: AccentColorService.instance,
+      builder: (context, child) {
+        final accentColor = AccentColorService.instance.accentColor;
+        return Container(
+          margin: const EdgeInsets.fromLTRB(12, 12, 12, 20),
+          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+          decoration: BoxDecoration(
+            color: accentColor,
+            borderRadius: BorderRadius.circular(28),
+            boxShadow: [
+              BoxShadow(
+                color: accentColor.withOpacity(0.3),
+                blurRadius: 12,
+                offset: const Offset(0, 4),
+              ),
+            ],
           ),
-        ],
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-        children: [
-          _buildNavItem(0, Icons.note_alt_outlined, Icons.note_alt_rounded,
-              'Notes', isDark),
-          _buildNavItem(1, Icons.auto_awesome_outlined,
-              Icons.auto_awesome_rounded, 'Souvenirs', isDark),
-          _buildNavItem(2, Icons.favorite_outline_rounded,
-              Icons.favorite_rounded, 'Favoris', isDark),
-          _buildNavItem(3, Icons.settings_outlined, Icons.settings_rounded,
-              'Reglages', isDark),
-        ],
-      ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            children: [
+              _buildNavItem(0, Icons.note_alt_outlined, Icons.note_alt_rounded,
+                  'Notes', isDark, accentColor),
+              _buildNavItem(1, Icons.people_outline_rounded, Icons.people_rounded,
+                  'Partage', isDark, accentColor),
+              _buildNavItem(2, Icons.auto_awesome_outlined,
+                  Icons.auto_awesome_rounded, 'Souvenirs', isDark, accentColor),
+              _buildNavItem(3, Icons.favorite_outline_rounded,
+                  Icons.favorite_rounded, 'Favoris', isDark, accentColor),
+              _buildNavItem(4, Icons.settings_outlined, Icons.settings_rounded,
+                  'Réglages', isDark, accentColor),
+            ],
+          ),
+        );
+      },
     );
   }
 
   Widget _buildNavItem(int index, IconData icon, IconData activeIcon,
-      String label, bool isDark) {
+      String label, bool isDark, Color accentColor) {
     final selected = _currentIndex == index;
 
     return GestureDetector(
@@ -368,7 +379,7 @@ class _MainScreenState extends State<MainScreen> {
         curve: Curves.easeOutCubic,
         padding: EdgeInsets.symmetric(
           vertical: 10,
-          horizontal: selected ? 16 : 14,
+          horizontal: selected ? 10 : 6,
         ),
         decoration: BoxDecoration(
           color: selected ? Colors.white : Colors.transparent,
@@ -379,8 +390,8 @@ class _MainScreenState extends State<MainScreen> {
           children: [
             Icon(
               selected ? activeIcon : icon,
-              size: 26,
-              color: selected ? AppTheme.skyBlue : Colors.white,
+              size: 24,
+              color: selected ? accentColor : Colors.white,
             ),
             AnimatedSize(
               duration: const Duration(milliseconds: 200),
@@ -391,10 +402,12 @@ class _MainScreenState extends State<MainScreen> {
                       child: Text(
                         label,
                         style: TextStyle(
-                          color: AppTheme.skyBlue,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w700,
+                          color: accentColor,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w900,
                         ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
                     )
                   : const SizedBox.shrink(),

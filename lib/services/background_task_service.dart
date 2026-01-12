@@ -1,6 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:workmanager/workmanager.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import '../../firebase_options.dart';
+import '../models/app_notification.dart';
 import 'memory_notification_service.dart';
 
 /// Nom de la tâche de fond pour les souvenirs
@@ -19,11 +24,22 @@ void callbackDispatcher() {
         final prefs = await SharedPreferences.getInstance();
         await prefs.setString('last_background_run', DateTime.now().toIso8601String());
         
+        // Initialiser Firebase (nécessaire pour Firestore en arrière-plan)
+        // Note: Firebase.initializeApp() doit être appelé ici si ce n'est pas déjà fait 
+        // par d'autres services, mais généralement Workmanager l'exige.
+        
         // Vérifier et envoyer les notifications de souvenirs
         await MemoryNotificationService.instance.init();
         await MemoryNotificationService.instance.checkAndNotifyMemories();
         
-        debugPrint('BackgroundTask: Souvenirs verifies');
+        // --- NOUVEAU : Vérifier les notifications de partage/reactions ---
+        // On récupère manuellement car le listener Stream ne tourne pas en tâche de fond fixe
+        final user = await _getBackgroundUser();
+        if (user != null) {
+          await _checkUnreadNotifications(user.uid);
+        }
+        
+        debugPrint('BackgroundTask: Souvenirs et Notifications verifies');
       }
       return true;
     } catch (e) {
@@ -31,6 +47,46 @@ void callbackDispatcher() {
       return false;
     }
   });
+}
+
+/// Helper pour récupérer l'utilisateur en tâche de fond
+Future<User?> _getBackgroundUser() async {
+  try {
+    if (Firebase.apps.isEmpty) {
+      await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+    }
+    return FirebaseAuth.instance.currentUser;
+  } catch (e) {
+    return null;
+  }
+}
+
+/// Helper pour vérifier les notifications non lues en tâche de fond
+Future<void> _checkUnreadNotifications(String userId) async {
+  try {
+    final snapshot = await FirebaseFirestore.instance
+        .collection('notifications')
+        .where('recipientId', isEqualTo: userId)
+        .where('isRead', isEqualTo: false)
+        .get();
+
+    for (var doc in snapshot.docs) {
+      final notif = AppNotification.fromFirestore(doc);
+      
+      // Afficher la notification locale
+      await MemoryNotificationService.instance.showLocalNotification(
+        id: notif.id.hashCode,
+        title: notif.title,
+        body: notif.body,
+        payload: notif.sharedNoteId ?? notif.noteId,
+      );
+
+      // Marquer comme lue
+      await doc.reference.update({'isRead': true});
+    }
+  } catch (e) {
+    debugPrint('Error checking background notifications: $e');
+  }
 }
 
 class BackgroundTaskService {

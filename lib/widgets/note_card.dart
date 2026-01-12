@@ -29,60 +29,60 @@ class NoteCard extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       onLongPress: onLongPress,
-      child: Container(
-        decoration: BoxDecoration(
+              child: Container(
+                decoration: BoxDecoration(
           color: hasImage ? null : cardColor,
           borderRadius: BorderRadius.circular(22),
           border: isWhite && !isDark && !hasImage
               ? Border.all(color: Colors.grey.shade200)
               : null,
-          boxShadow: [
-            BoxShadow(
+                  boxShadow: [
+                    BoxShadow(
               color: isDark
                   ? Colors.black.withOpacity(0.3)
                   : AppTheme.skyBlue.withOpacity(0.08),
               blurRadius: 20,
               offset: const Offset(0, 8),
-            ),
-          ],
-        ),
+                    ),
+                  ],
+                ),
         child: ClipRRect(
           borderRadius: BorderRadius.circular(22),
-          child: Stack(
-            children: [
+                  child: Stack(
+                    children: [
               // Image
               if (hasImage) ...[
-                Positioned.fill(
-                  child: Image.file(
+                        Positioned.fill(
+                            child: Image.file(
                     File(note.imagePaths.first),
-                    fit: BoxFit.cover,
+                              fit: BoxFit.cover,
                     errorBuilder: (_, __, ___) => Container(color: cardColor),
-                  ),
-                ),
-                Positioned.fill(
-                  child: Container(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: [
-                          Colors.transparent,
+                          ),
+                        ),
+                        Positioned.fill(
+                          child: Container(
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                begin: Alignment.topCenter,
+                                end: Alignment.bottomCenter,
+                                colors: [
+                                  Colors.transparent,
                           Colors.black.withOpacity(0.65),
-                        ],
+                                ],
                         stops: const [0.35, 1.0],
-                      ),
-                    ),
-                  ),
-                ),
+                              ),
+                            ),
+                          ),
+                        ),
               ],
 
               // Contenu
-              Padding(
+                      Padding(
                 padding: const EdgeInsets.all(16),
-                child: Column(
+                        child: Column(
                   mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
                     // Badges
                     _buildBadges(hasImage),
 
@@ -93,14 +93,14 @@ class NoteCard extends StatelessWidget {
                         const SizedBox(height: 10),
                       Text(
                         note.title,
-                        style: TextStyle(
+                                          style: TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.w700,
                           color: textColor,
-                          height: 1.3,
-                        ),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
+                                            height: 1.3,
+                                          ),
+                                          maxLines: 2,
+                                          overflow: TextOverflow.ellipsis,
                       ),
                     ],
 
@@ -113,7 +113,7 @@ class NoteCard extends StatelessWidget {
                           fontSize: 13,
                           color: textColor.withOpacity(0.75),
                           height: 1.45,
-                        ),
+                                      ),
                         maxLines: 4,
                         overflow: TextOverflow.ellipsis,
                       ),
@@ -123,10 +123,10 @@ class NoteCard extends StatelessWidget {
                     const SizedBox(height: 12),
                     _buildDate(textColor, hasImage),
                   ],
-                ),
-              ),
-            ],
-          ),
+                                    ),
+                                  ),
+                              ],
+                            ),
         ),
       ),
     );
@@ -140,36 +140,36 @@ class NoteCard extends StatelessWidget {
     return Row(
       children: [
         if (note.isFavorite)
-          Container(
+                              Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            decoration: BoxDecoration(
+                                decoration: BoxDecoration(
               color: AppTheme.skyBlue,
               borderRadius: BorderRadius.circular(8),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
               children: const [
                 Icon(Icons.favorite_rounded, color: Colors.white, size: 12),
                 SizedBox(width: 3),
                 Text('Favori',
                     style: TextStyle(
-                        color: Colors.white,
+                                      color: Colors.white,
                         fontSize: 10,
                         fontWeight: FontWeight.w600)),
-              ],
-            ),
-          ),
+                                  ],
+                                ),
+                              ),
         const Spacer(),
         if (hasImage && note.imagePaths.length > 1)
-          Container(
+                            Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            decoration: BoxDecoration(
+                              decoration: BoxDecoration(
               color: Colors.black.withOpacity(0.35),
               borderRadius: BorderRadius.circular(8),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
                 const Icon(Icons.photo_library_rounded,
                     color: Colors.white, size: 12),
                 const SizedBox(width: 3),
@@ -178,10 +178,10 @@ class NoteCard extends StatelessWidget {
                         color: Colors.white,
                         fontSize: 10,
                         fontWeight: FontWeight.w600)),
-              ],
-            ),
-          ),
-      ],
+                                ],
+                              ),
+                            ),
+                          ],
     );
   }
 
@@ -197,8 +197,8 @@ class NoteCard extends StatelessWidget {
               fontSize: 11,
               color: textColor.withOpacity(0.5),
               fontWeight: FontWeight.w500),
-        ),
-      ],
+                                ),
+                              ],
     );
   }
 

@@ -106,9 +106,11 @@ class _SplashScreenCleanState extends State<SplashScreenClean>
     await Future.delayed(const Duration(milliseconds: 2500));
 
     if (mounted) {
-      // Toujours aller directement aux notes
-      // L'utilisateur peut se connecter depuis les paramètres si besoin
-      Navigator.of(context).pushReplacementNamed('/main');
+      if (AuthService.instance.isSignedIn) {
+        Navigator.of(context).pushReplacementNamed('/main');
+      } else {
+        Navigator.of(context).pushReplacementNamed('/welcome');
+      }
     }
   }
 

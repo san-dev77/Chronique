@@ -2,12 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../services/auth_service.dart';
 import '../services/cloud_sync_service.dart';
+import '../services/sharing_service.dart';
 import '../widgets/primary_button.dart';
 import '../widgets/note_logo.dart';
 
-/// Écran de connexion simplifié (Google + Email)
+/// Écran de connexion simplifié (Email + Mot de passe uniquement)
 class AuthLoginScreen extends StatefulWidget {
-  const AuthLoginScreen({super.key});
+  final bool initialIsSignUp;
+  const AuthLoginScreen({super.key, this.initialIsSignUp = false});
 
   @override
   State<AuthLoginScreen> createState() => _AuthLoginScreenState();
@@ -17,11 +19,12 @@ class _AuthLoginScreenState extends State<AuthLoginScreen>
     with SingleTickerProviderStateMixin {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
+  final _nameController = TextEditingController();
   final _formKey = GlobalKey<FormState>();
 
   bool _isLoading = false;
   bool _obscurePassword = true;
-  bool _isSignUp = false;
+  late bool _isSignUp;
 
   late AnimationController _animController;
   late Animation<double> _fadeAnimation;
@@ -30,6 +33,7 @@ class _AuthLoginScreenState extends State<AuthLoginScreen>
   @override
   void initState() {
     super.initState();
+    _isSignUp = widget.initialIsSignUp;
 
     _animController = AnimationController(
       duration: const Duration(milliseconds: 600),
@@ -54,39 +58,9 @@ class _AuthLoginScreenState extends State<AuthLoginScreen>
   void dispose() {
     _emailController.dispose();
     _passwordController.dispose();
+    _nameController.dispose();
     _animController.dispose();
     super.dispose();
-  }
-
-  Future<void> _handleGoogleSignIn() async {
-    setState(() => _isLoading = true);
-
-    try {
-      final userCredential = await AuthService.instance.signInWithGoogle();
-
-      if (userCredential == null) {
-        setState(() => _isLoading = false);
-        return;
-      }
-
-      if (!mounted) return;
-
-      // Sync après connexion
-      await CloudSyncService.instance.syncAll();
-
-      Navigator.pushReplacementNamed(context, '/main');
-    } catch (e) {
-      if (!mounted) return;
-
-      setState(() => _isLoading = false);
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(AuthService.instance.getErrorMessage(e)),
-          backgroundColor: Colors.red,
-        ),
-      );
-    }
   }
 
   Future<void> _handleEmailAuth() async {
@@ -94,24 +68,29 @@ class _AuthLoginScreenState extends State<AuthLoginScreen>
 
     setState(() => _isLoading = true);
 
-    UserCredential? userCredential;
-
     try {
       if (_isSignUp) {
         // Inscription
-        userCredential = await AuthService.instance.signUpWithEmail(
+        await AuthService.instance.signUpWithEmail(
           email: _emailController.text.trim(),
           password: _passwordController.text,
+          displayName: _nameController.text.trim(),
         );
 
         // Attendre un peu pour que Firebase finalise
         await Future.delayed(const Duration(milliseconds: 500));
+
+        // Enregistrer dans Firestore
+        await SharingService.instance.registerCurrentUser(name: _nameController.text.trim());
       } else {
         // Connexion
-        userCredential = await AuthService.instance.signInWithEmail(
+        await AuthService.instance.signInWithEmail(
           email: _emailController.text.trim(),
           password: _passwordController.text,
         );
+
+        // Sync Firestore profile
+        await SharingService.instance.registerCurrentUser();
       }
 
       // Si on arrive ici, l'auth a réussi
@@ -122,7 +101,6 @@ class _AuthLoginScreenState extends State<AuthLoginScreen>
         await CloudSyncService.instance.syncAll();
       } catch (syncError) {
         print('Erreur sync après auth: $syncError');
-        // Continue même si sync échoue
       }
 
       if (!mounted) return;
@@ -132,20 +110,7 @@ class _AuthLoginScreenState extends State<AuthLoginScreen>
     } catch (e) {
       print('Erreur auth: $e');
 
-      // Vérifier si l'utilisateur est quand même connecté
-      if (AuthService.instance.isSignedIn) {
-        print('Compte créé malgré erreur, redirection...');
-
-        if (!mounted) return;
-
-        // Rediriger quand même
-        Navigator.pushReplacementNamed(context, '/main');
-        return;
-      }
-
-      // Sinon, afficher l'erreur
       if (!mounted) return;
-
       setState(() => _isLoading = false);
 
       ScaffoldMessenger.of(context).showSnackBar(
@@ -247,82 +212,55 @@ class _AuthLoginScreenState extends State<AuthLoginScreen>
 
                             const SizedBox(height: 36),
 
-                            // Bouton Google amélioré
-                            Container(
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                borderRadius: BorderRadius.circular(16),
-                                border: Border.all(
-                                    color: Colors.grey.shade300, width: 2),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Colors.black.withOpacity(0.05),
-                                    blurRadius: 10,
-                                    offset: const Offset(0, 4),
+                            // Nom (Uniquement pour inscription)
+                            if (_isSignUp) ...[
+                              TextFormField(
+                                controller: _nameController,
+                                style: const TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w500,
+                                  color: Color(0xFF1A1A1A),
+                                ),
+                                decoration: InputDecoration(
+                                  labelText: 'Nom d\'affichage',
+                                  labelStyle: TextStyle(
+                                    color: Colors.grey.shade700,
+                                    fontWeight: FontWeight.w500,
                                   ),
-                                ],
-                              ),
-                              child: Material(
-                                color: Colors.transparent,
-                                child: InkWell(
-                                  onTap:
-                                      _isLoading ? null : _handleGoogleSignIn,
-                                  borderRadius: BorderRadius.circular(16),
-                                  child: Container(
-                                    height: 56,
-                                    alignment: Alignment.center,
-                                    child: Row(
-                                      mainAxisAlignment:
-                                          MainAxisAlignment.center,
-                                      children: [
-                                        Icon(Icons.g_mobiledata,
-                                            size: 32,
-                                            color: Colors.grey.shade800),
-                                        const SizedBox(width: 12),
-                                        Text(
-                                          'Continuer avec Google',
-                                          style: TextStyle(
-                                            fontSize: 16,
-                                            fontWeight: FontWeight.w600,
-                                            color: Colors.grey.shade900,
-                                          ),
-                                        ),
-                                      ],
+                                  prefixIcon: Icon(Icons.person_outline,
+                                      color: Colors.grey.shade700),
+                                  filled: true,
+                                  fillColor: Colors.white,
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(16),
+                                    borderSide: BorderSide(
+                                        color: Colors.grey.shade300, width: 2),
+                                  ),
+                                  enabledBorder: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(16),
+                                    borderSide: BorderSide(
+                                        color: Colors.grey.shade300, width: 2),
+                                  ),
+                                  focusedBorder: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(16),
+                                    borderSide: BorderSide(
+                                      color:
+                                          Theme.of(context).colorScheme.primary,
+                                      width: 2,
                                     ),
                                   ),
                                 ),
+                                textCapitalization: TextCapitalization.words,
+                                validator: (value) {
+                                  if (_isSignUp &&
+                                      (value == null || value.trim().isEmpty)) {
+                                    return 'Nom requis';
+                                  }
+                                  return null;
+                                },
                               ),
-                            ),
-
-                            const SizedBox(height: 28),
-
-                            // Divider
-                            Row(
-                              children: [
-                                Expanded(
-                                    child: Divider(
-                                        color: Colors.grey.shade400,
-                                        thickness: 1)),
-                                Padding(
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 16),
-                                  child: Text(
-                                    'OU',
-                                    style: TextStyle(
-                                      color: Colors.grey.shade700,
-                                      fontWeight: FontWeight.w700,
-                                      fontSize: 13,
-                                    ),
-                                  ),
-                                ),
-                                Expanded(
-                                    child: Divider(
-                                        color: Colors.grey.shade400,
-                                        thickness: 1)),
-                              ],
-                            ),
-
-                            const SizedBox(height: 28),
+                              const SizedBox(height: 20),
+                            ],
 
                             // Email
                             TextFormField(

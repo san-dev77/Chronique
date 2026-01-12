@@ -3,8 +3,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../models/note.dart';
 import '../widgets/image_gallery_editor.dart';
+import '../services/auth_service.dart';
 import '../theme/app_theme.dart';
 import '../utils/date_formatter.dart';
+import 'member_picker_screen.dart';
 
 class NoteViewScreen extends StatefulWidget {
   final Note note;
@@ -479,6 +481,8 @@ class _NoteViewScreenState extends State<NoteViewScreen>
   }
 
   Widget _buildAppBar(BuildContext context, Color textColor, bool isDark) {
+    final isSignedIn = AuthService.instance.isSignedIn;
+    
     return Container(
       padding: const EdgeInsets.fromLTRB(8, 8, 16, 8),
       child: Row(
@@ -488,6 +492,12 @@ class _NoteViewScreenState extends State<NoteViewScreen>
             icon: Icon(Icons.arrow_back_rounded, color: textColor),
           ),
           const Spacer(),
+          // Bouton partager (seulement si connecté)
+          if (isSignedIn) ...[
+            _buildToolButton(
+                Icons.share_outlined, textColor, () => _showShareDialog(), isDark),
+            const SizedBox(width: 4),
+          ],
           _buildToolButton(
               Icons.edit_outlined, textColor, widget.onEdit, isDark),
           const SizedBox(width: 4),
@@ -503,6 +513,15 @@ class _NoteViewScreenState extends State<NoteViewScreen>
             isDark,
           ),
         ],
+      ),
+    );
+  }
+  
+  void _showShareDialog() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => MemberPickerScreen(note: widget.note),
       ),
     );
   }
