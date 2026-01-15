@@ -2,9 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import '../models/note.dart';
+import '../models/text_span_data.dart';
 import '../widgets/color_picker.dart';
 import '../widgets/image_gallery_editor.dart';
+import '../widgets/rich_text_controller.dart';
+import '../widgets/rich_text_field.dart';
 import '../services/image_storage_service.dart';
+import '../services/image_crop_service.dart';
 import '../theme/app_theme.dart';
 
 class NoteEditScreen extends StatefulWidget {
@@ -19,7 +23,7 @@ class NoteEditScreen extends StatefulWidget {
 
 class _NoteEditScreenState extends State<NoteEditScreen> {
   late TextEditingController _titleController;
-  late TextEditingController _contentController;
+  late RichTextEditingController _contentController;
   late Note _note;
   final _imagePicker = ImagePicker();
   final _titleFocus = FocusNode();
@@ -40,6 +44,7 @@ class _NoteEditScreenState extends State<NoteEditScreen> {
       id: widget.note.id,
       title: widget.note.title,
       content: widget.note.content,
+      formattedContent: widget.note.formattedContent,
       createdAt: widget.note.createdAt,
       modifiedAt: widget.note.modifiedAt,
       imagePaths: List.from(widget.note.imagePaths),
@@ -47,7 +52,14 @@ class _NoteEditScreenState extends State<NoteEditScreen> {
       isFavorite: widget.note.isFavorite,
     );
     _titleController = TextEditingController(text: _note.title);
-    _contentController = TextEditingController(text: _note.content);
+    _contentController = RichTextEditingController(text: _note.content);
+    
+    // Charger le contenu formaté s'il existe
+    if (_note.formattedContent != null && _note.formattedContent!.isNotEmpty) {
+      _contentController.setFormattedContent(
+        FormattedContent.fromJsonString(_note.formattedContent),
+      );
+    }
 
     // Sauvegarder l'etat initial
     _initialTitle = widget.note.title;
@@ -70,7 +82,7 @@ class _NoteEditScreenState extends State<NoteEditScreen> {
     final currentTitle = _titleController.text.trim();
     final currentContent = _contentController.text.trim();
 
-    // Verifier si le contenu est vide (nouvelle note sans contenu)
+    // Verifier si le contenu est vide (nouvelle story sans contenu)
     if (currentTitle.isEmpty &&
         currentContent.isEmpty &&
         _note.imagePaths.isEmpty) {
@@ -176,7 +188,11 @@ class _NoteEditScreenState extends State<NoteEditScreen> {
 
   void _save() {
     _note.title = _titleController.text.trim();
-    _note.content = _contentController.text.trim();
+    // On ne trim() pas le content ici pour garder la cohérence avec les spans du RichText
+    // Le RichTextEditingController gère déjà son propre état
+    final formatted = _contentController.getFormattedContent();
+    _note.content = _contentController.text; 
+    _note.formattedContent = formatted.toJsonString();
     _note.modifiedAt = DateTime.now();
     widget.onSave(_note);
     Navigator.pop(context);
@@ -192,8 +208,13 @@ class _NoteEditScreenState extends State<NoteEditScreen> {
         imageQuality: 85,
       );
       if (image != null) {
+        // Proposer le recadrage
+        final croppedPath = await ImageCropService.instance.cropImage(context, image.path);
+        final finalPath = croppedPath ?? image.path; // Si annulé, on garde l'original ou on ignore ? 
+        // L'utilisateur demande "donne la possibilité de resizer", donc on l'integre.
+        
         final path =
-            await ImageStorageService.instance.saveImagePermanently(image.path);
+            await ImageStorageService.instance.saveImagePermanently(finalPath);
         setState(() => _note.imagePaths.add(path));
       }
     } finally {
@@ -222,7 +243,7 @@ class _NoteEditScreenState extends State<NoteEditScreen> {
                   color: Colors.grey.shade300,
                   borderRadius: BorderRadius.circular(2)),
             ),
-            const Text('Couleur de la note',
+            const Text('Couleur de la story',
                 style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600)),
             const SizedBox(height: 20),
             ColorPicker(
@@ -288,7 +309,7 @@ class _NoteEditScreenState extends State<NoteEditScreen> {
                     child: SingleChildScrollView(
                       padding: const EdgeInsets.all(24),
                       child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
                           // Images
                           if (_note.imagePaths.isNotEmpty) ...[
@@ -344,32 +365,19 @@ class _NoteEditScreenState extends State<NoteEditScreen> {
 
                           const SizedBox(height: 20),
 
-                          // Contenu - style page
-                          EditableText(
+                          // Contenu - style page avec formatage riche
+                          RichTextField(
                             controller: _contentController,
                             focusNode: _contentFocus,
-                            style: TextStyle(
+                            baseStyle: TextStyle(
                               fontSize: 16,
                               color: textColor.withOpacity(0.85),
                               height: 1.8,
                             ),
+                            placeholder: 'Commencez à écrire...',
                             cursorColor: AppTheme.skyBlue,
-                            backgroundCursorColor: Colors.grey,
-                            maxLines: null,
                             onChanged: (_) => setState(() {}),
                           ),
-                          if (_contentController.text.isEmpty)
-                            GestureDetector(
-                              onTap: () => _contentFocus.requestFocus(),
-                              child: Text(
-                                'Commencez à écrire...',
-                                style: TextStyle(
-                                  fontSize: 16,
-                                  color: textColor.withOpacity(0.25),
-                                  height: 1.8,
-                                ),
-                              ),
-                            ),
 
                           const SizedBox(height: 200),
                         ],

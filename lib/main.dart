@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'screens/splash_screen_clean.dart';
 import 'screens/main_screen.dart';
 import 'screens/welcome_screen.dart';
@@ -92,16 +93,24 @@ class _NoteKeeperAppState extends State<NoteKeeperApp> {
     super.initState();
     // Configurer le callback pour ouvrir une note depuis la notification
     MemoryNotificationService.instance.onOpenNote = _openNote;
-    
+
     // Écouter les changements d'état d'authentification pour isoler les données
     AuthService.instance.authStateChanges.listen((user) async {
+      // Sauvegarder l'ID pour les tâches de fond
+      final prefs = await SharedPreferences.getInstance();
+      if (user != null) {
+        await prefs.setString('current_user_id', user.uid);
+      } else {
+        await prefs.remove('current_user_id');
+      }
+
       // Re-initialiser NoteService pour changer de box Hive (isolation des données)
       await NoteService.instance.initializeForUser(user?.uid);
-      
+
       if (user != null) {
         // Commencer l'écoute des notifications temps réel
         RealtimeNotificationService.instance.startListening();
-        
+
         // Enregistrer l'utilisateur dans Firestore pour le partage
         SharingService.instance.registerCurrentUser();
         // Optionnel : déclencher une sync auto au changement de compte
@@ -136,9 +145,8 @@ class _NoteKeeperAppState extends State<NoteKeeperApp> {
               navigatorKey.currentState?.pop();
             },
             onToggleFavorite: () async {
-              await NoteService.instance.saveNote(
-                note.copyWith(isFavorite: !note.isFavorite),
-              );
+              note.isFavorite = !note.isFavorite;
+              await NoteService.instance.saveNote(note);
             },
           ),
         ),

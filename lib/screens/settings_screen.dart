@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../widgets/app_launcher_preview.dart';
 import '../services/backup_service.dart';
 import '../services/note_service.dart';
@@ -11,6 +12,10 @@ import '../services/background_task_service.dart';
 import '../services/accent_color_service.dart';
 import '../services/theme_service.dart';
 import '../services/sharing_service.dart';
+import '../services/image_base64_service.dart';
+import '../services/image_crop_service.dart';
+import 'package:image_picker/image_picker.dart';
+import '../widgets/user_avatar.dart';
 import '../theme/app_theme.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -28,9 +33,14 @@ class _SettingsScreenState extends State<SettingsScreen>
   bool _isCleaning = false;
   bool _isSyncing = false; // Pour la sync manuelle
   String? _firestoreName; // Nom recupere de Firestore si Auth est vide
+  String? _profilePhotoBase64;
+  int? _profileColor;
   bool _isSendingNotif = false;
   bool _backgroundTaskEnabled = false;
   DateTime? _lastBackgroundRun;
+  String? _lastNotifDate;
+  String? _lastNotifReason;
+  String? _lastWorkerRunRaw;
 
   @override
   void initState() {
@@ -42,10 +52,19 @@ class _SettingsScreenState extends State<SettingsScreen>
   Future<void> _loadBackgroundTaskStatus() async {
     final enabled = await BackgroundTaskService.instance.isTaskEnabled();
     final lastRun = await BackgroundTaskService.instance.getLastRunTime();
+    
+    final prefs = await SharedPreferences.getInstance();
+    final notifDate = prefs.getString('last_notif_date');
+    final notifReason = prefs.getString('last_notif_reason');
+    final workerRunRaw = prefs.getString('last_worker_run');
+
     if (mounted) {
       setState(() {
         _backgroundTaskEnabled = enabled;
         _lastBackgroundRun = lastRun;
+        _lastNotifDate = notifDate;
+        _lastNotifReason = notifReason;
+        _lastWorkerRunRaw = workerRunRaw;
       });
     }
   }
@@ -57,8 +76,11 @@ class _SettingsScreenState extends State<SettingsScreen>
     try {
       final doc = await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
       if (doc.exists && mounted) {
+        final data = doc.data() as Map<String, dynamic>?;
         setState(() {
-          _firestoreName = (doc.data() as Map<String, dynamic>?)?['displayName'];
+          _firestoreName = data?['displayName'];
+          _profilePhotoBase64 = data?['photoBase64'];
+          _profileColor = data?['profileColor'];
         });
       }
     } catch (e) {
@@ -145,16 +167,41 @@ class _SettingsScreenState extends State<SettingsScreen>
           ),
           child: Column(
             children: [
-              CircleAvatar(
-                radius: 40,
-                backgroundColor: AppTheme.skyBlue.withOpacity(0.12),
-                child: Text(
-                  _getInitial(AuthService.instance.userName),
-                  style: TextStyle(
-                    fontSize: 28,
-                    fontWeight: FontWeight.w800,
-                    color: AppTheme.skyBlue,
-                  ),
+              GestureDetector(
+                onTap: _pickProfileImage,
+                child: Stack(
+                  children: [
+                    UserAvatar(
+                      displayName: AuthService.instance.userName ?? 'U',
+                      photoBase64: _profilePhotoBase64,
+                      photoUrl: AuthService.instance.currentUser?.photoURL,
+                      profileColor: _profileColor,
+                      radius: 50,
+                    ),
+                    Positioned(
+                      bottom: 0,
+                      right: 0,
+                      child: Container(
+                        padding: const EdgeInsets.all(4),
+                        decoration: BoxDecoration(
+                          color: AppTheme.skyBlue,
+                          shape: BoxShape.circle,
+                          border: Border.all(color: Colors.white, width: 2),
+                        ),
+                        child: const Icon(Icons.camera_alt_rounded, size: 16, color: Colors.white),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 8),
+              TextButton.icon(
+                onPressed: _pickProfileImage,
+                icon: const Icon(Icons.edit_rounded, size: 16),
+                label: const Text('Changer la photo'),
+                style: TextButton.styleFrom(
+                  foregroundColor: AppTheme.skyBlue,
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                 ),
               ),
               const SizedBox(height: 16),
@@ -172,19 +219,25 @@ class _SettingsScreenState extends State<SettingsScreen>
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  _buildMiniAction(
-                    icon: Icons.edit_rounded,
-                    label: 'Modifier',
-                    onTap: _showEditNameDialog,
+                   _buildMiniAction(
+                    icon: Icons.palette_rounded,
+                    label: 'Couleur',
+                    onTap: _showProfileColorPicker,
                   ),
                   const SizedBox(width: 12),
                   _buildMiniAction(
-                    icon: Icons.sync_rounded,
-                    label: 'Sync',
-                    onTap: _manualSync,
-                    isLoading: _isSyncing,
+                    icon: Icons.edit_rounded,
+                    label: 'Nom',
+                    onTap: _showEditNameDialog,
                   ),
                 ],
+              ),
+              const SizedBox(height: 12),
+              _buildMiniAction(
+                icon: Icons.sync_rounded,
+                label: 'Synchronisation Cloud',
+                onTap: _manualSync,
+                isLoading: _isSyncing,
               ),
             ],
           ),
@@ -253,6 +306,10 @@ class _SettingsScreenState extends State<SettingsScreen>
         _buildBackgroundTaskStatus(isDark),
         const SizedBox(height: 24),
         
+        _buildSectionTitle('Rapport de Diagnostic'),
+        _buildDiagnosticSection(isDark),
+        const SizedBox(height: 24),
+        
         _buildSectionTitle('Notifications Souvenirs'),
         _buildNotificationsContent(isDark),
         
@@ -265,7 +322,7 @@ class _SettingsScreenState extends State<SettingsScreen>
         _buildBackupContent(isDark),
 
         const SizedBox(height: 40),
-        const Center(child: Text('Note Box v1.1.0', style: TextStyle(color: Colors.grey, fontSize: 12))),
+        const Center(child: Text('Story Box v1.2.0', style: TextStyle(color: Colors.grey, fontSize: 12, fontWeight: FontWeight.w600))),
         const SizedBox(height: 20),
       ],
     );
@@ -344,14 +401,159 @@ class _SettingsScreenState extends State<SettingsScreen>
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  _backgroundTaskEnabled ? 'Tache active' : 'Tache inactive',
-                  style: const TextStyle(fontWeight: FontWeight.w700),
+                  _backgroundTaskEnabled ? 'Tâche de fond active' : 'Tâche de fond inactive',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w800,
+                    color: _backgroundTaskEnabled 
+                        ? (isDark ? Colors.greenAccent : Colors.green[800])
+                        : (isDark ? Colors.grey[400] : Colors.grey[700]),
+                    fontSize: 14
+                  ),
                 ),
+                const SizedBox(height: 4),
                 Text(
-                  'Dernier passage: ${BackgroundTaskService.instance.formatRelativeTime(_lastBackgroundRun)}',
-                  style: const TextStyle(fontSize: 11, color: Colors.grey),
+                  'Auto-souvenirs: ${BackgroundTaskService.instance.formatRelativeTime(_lastBackgroundRun)}',
+                  style: TextStyle(
+                    fontSize: 11, 
+                    color: isDark ? Colors.white70 : Colors.black87,
+                    fontWeight: FontWeight.w500
+                  ),
+                ),
+                if (_lastNotifDate != null)
+                  Text(
+                    'Dernière alerte: $_lastNotifDate',
+                    style: TextStyle(
+                      fontSize: 11, 
+                      color: isDark ? Colors.white70 : Colors.black87,
+                      fontWeight: FontWeight.w500
+                    ),
+                  ),
+                if (_lastWorkerRunRaw != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Text(
+                      'Pulsation système: ${BackgroundTaskService.instance.formatRelativeTime(DateTime.tryParse(_lastWorkerRunRaw!))}',
+                      style: TextStyle(fontSize: 10, color: isDark ? Colors.grey[400] : Colors.grey[600], fontStyle: FontStyle.italic),
+                    ),
+                  ),
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Colors.amber.withOpacity(isDark ? 0.1 : 0.05),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.amber.withOpacity(0.3)),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.info_outline_rounded, size: 16, color: Colors.amber),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Les Stories sont vérifiées toutes les 15 minutes (minimum Android). Les Souvenirs sont envoyés une seule fois à l\'heure choisie.',
+                          style: TextStyle(fontSize: 10, color: isDark ? Colors.amber[200] : Colors.amber[900]),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDiagnosticSection(bool isDark) {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: isDark ? AppTheme.cardDark : Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: (_lastNotifReason?.contains('envoyé') == true) 
+              ? Colors.green.withOpacity(0.3) 
+              : Colors.orange.withOpacity(0.3),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                Icons.analytics_rounded, 
+                color: (_lastNotifReason?.contains('envoyé') == true) ? Colors.green : Colors.orange,
+                size: 20
+              ),
+              const SizedBox(width: 8),
+              const Text(
+                'État du système',
+                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          _buildDiagnosticRow(
+            'Check Stories (Fréquent)', 
+            _lastWorkerRunRaw != null 
+                ? BackgroundTaskService.instance.formatRelativeTime(DateTime.tryParse(_lastWorkerRunRaw!))
+                : 'Jamais',
+            isDark
+          ),
+          _buildDiagnosticRow(
+            'Check Souvenirs (Quotidien)', 
+            _lastNotifReason ?? 'En attente',
+            isDark,
+            isSuccess: _lastNotifReason?.contains('envoyé') == true
+          ),
+          const SizedBox(height: 12),
+          _buildMiniAction(
+            icon: Icons.refresh_rounded,
+            label: 'Actualiser le diagnostic',
+            onTap: _loadBackgroundTaskStatus,
+          ),
+          const SizedBox(width: 8),
+          _buildMiniAction(
+            icon: Icons.play_circle_filled_rounded,
+            label: 'Forcer la vérification (Test)',
+            onTap: () async {
+              setState(() => _isSyncing = true);
+              await BackgroundTaskService.instance.debugForceRun();
+              await _loadBackgroundTaskStatus();
+              if (mounted) {
+                setState(() => _isSyncing = false);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Vérification forcée terminée !'))
+                );
+              }
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDiagnosticRow(String label, String value, bool isDark, {bool? isSuccess}) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(label, style: TextStyle(fontSize: 12, color: isDark ? Colors.grey[400] : Colors.grey[600])),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              value, 
+              textAlign: TextAlign.right,
+              style: TextStyle(
+                fontSize: 12, 
+                fontWeight: FontWeight.w700,
+                color: isSuccess == true 
+                    ? (isDark ? Colors.greenAccent : Colors.green[700]) 
+                    : (isSuccess == false ? (isDark ? Colors.orangeAccent : Colors.orange[800]) : (isDark ? Colors.white70 : Colors.black87)),
+              )
             ),
           ),
         ],
@@ -438,11 +640,28 @@ class _SettingsScreenState extends State<SettingsScreen>
     final notifService = MemoryNotificationService.instance;
     return Column(
       children: [
+        _buildBackgroundTaskStatus(isDark),
+        const SizedBox(height: 12),
+        _buildMiniAction(
+          icon: Icons.flash_on_rounded,
+          label: 'Simuler passage du Worker',
+          onTap: () async {
+            await BackgroundTaskService.instance.debugForceRun();
+            await _loadBackgroundTaskStatus();
+            setState(() {});
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Simulation du Worker terminée. Vérifiez vos notifications !')),
+              );
+            }
+          },
+        ),
+        const SizedBox(height: 16),
         _buildSwitchTile(
           icon: Icons.edit_note_rounded,
           iconColor: AppTheme.skyBlue,
           title: 'Confirmations directes',
-          subtitle: 'Alerte lors de la creation',
+          subtitle: 'Alerte lors de la création d\'une note',
           value: notifService.notifyOnCreate,
           onChanged: (v) async {
             await notifService.setNotifyOnCreate(v);
@@ -454,7 +673,7 @@ class _SettingsScreenState extends State<SettingsScreen>
           icon: Icons.auto_awesome_rounded,
           iconColor: AppTheme.skyBlue,
           title: 'Souvenirs auto',
-          subtitle: 'S\'affiche dans le temps',
+          subtitle: 'Découvrir d\'anciennes notes',
           value: notifService.memoriesEnabled,
           onChanged: (v) async {
             await notifService.setMemoriesEnabled(v);
@@ -470,10 +689,10 @@ class _SettingsScreenState extends State<SettingsScreen>
         if (notifService.memoriesEnabled) ...[
           const SizedBox(height: 8),
           _buildActionTile(
-            icon: Icons.schedule_rounded,
+            icon: Icons.access_time_rounded,
             iconColor: AppTheme.skyBlue,
-            title: 'Heure de rappel',
-            subtitle: notifService.memoriesTimeFormatted,
+            title: 'Heure de notification',
+            subtitle: 'Programmé pour ${notifService.memoriesTimeFormatted}',
             onTap: () async {
               final time = await showTimePicker(
                 context: context,
@@ -683,6 +902,111 @@ class _SettingsScreenState extends State<SettingsScreen>
     } finally {
       if (mounted) setState(() => _isSendingNotif = false);
     }
+  }
+
+  Future<void> _pickProfileImage() async {
+    final picker = ImagePicker(); // Instance locale
+    final image = await picker.pickImage(
+      source: ImageSource.gallery,
+      maxWidth: 400, // Image de profil n'a pas besoin d'être immense
+      maxHeight: 400,
+      imageQuality: 70,
+    );
+
+    if (image != null) {
+      setState(() => _isSyncing = true);
+      try {
+        // 1. Recadrage
+        final croppedPath = await ImageCropService.instance.cropImage(context, image.path, isProfile: true);
+        if (croppedPath == null) return; // Annulé
+
+        // 2. Encodage
+        final base64 = await ImageBase64Service.instance.encodeImageToBase64(croppedPath);
+        if (base64 != null) {
+          await SharingService.instance.updateProfileData(photoBase64: base64);
+          setState(() {
+            _profilePhotoBase64 = base64;
+          });
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Photo de profil mise à jour !')));
+        }
+      } catch (e) {
+        _showErrorDialog('Erreur Image', e.toString());
+      } finally {
+        setState(() => _isSyncing = false);
+      }
+    }
+  }
+
+  void _showProfileColorPicker() {
+    final colors = [
+      AppTheme.skyBlue,
+      Colors.purple,
+      Colors.pink,
+      Colors.orange,
+      Colors.teal,
+      Colors.indigo,
+      Colors.brown,
+      Colors.blueGrey,
+    ];
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (context) => Container(
+        padding: const EdgeInsets.all(24),
+        decoration: BoxDecoration(
+          color: Theme.of(context).scaffoldBackgroundColor,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('Couleur d\'avatar', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 24),
+            SizedBox(
+              height: 100,
+              child: GridView.builder(
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 4,
+                  mainAxisSpacing: 16,
+                  crossAxisSpacing: 16,
+                ),
+                itemCount: colors.length,
+                itemBuilder: (context, index) {
+                  final color = colors[index];
+                  return GestureDetector(
+                    onTap: () async {
+                      Navigator.pop(context);
+                      await SharingService.instance.updateProfileData(profileColor: color.value);
+                      setState(() {
+                        _profileColor = color.value;
+                      });
+                    },
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: color,
+                        shape: BoxShape.circle,
+                        border: Border.all(color: Colors.white, width: 3),
+                        boxShadow: [BoxShadow(color: color.withOpacity(0.3), blurRadius: 8)],
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+            const SizedBox(height: 16),
+            TextButton(
+              onPressed: () async {
+                Navigator.pop(context);
+                await SharingService.instance.updateProfileData(profileColor: null);
+                setState(() => _profileColor = null);
+              }, 
+              child: const Text('Reinitialiser par defaut'),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Future<void> _repairImages() async {

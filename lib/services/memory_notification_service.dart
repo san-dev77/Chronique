@@ -17,7 +17,7 @@ class MemoryNotificationService {
       FlutterLocalNotificationsPlugin();
   bool _isInitialized = false;
   bool _isAvailable = true;
-  
+
   // Préférences pour les notifications
   bool _notifyOnCreate = true;
   bool _memoriesEnabled = true;
@@ -28,13 +28,15 @@ class MemoryNotificationService {
   void Function(String noteId)? onOpenNote;
 
   // Channel IDs pour Android
-  static const String _channelId = 'note_box_memories';
-  static const String _channelName = 'Souvenirs Note Box';
-  static const String _channelDesc = 'Notifications pour redécouvrir vos anciennes notes';
-  
-  static const String _channelIdCreate = 'note_box_create';
-  static const String _channelNameCreate = 'Creation de notes';
-  static const String _channelDescCreate = 'Notifications lors de la creation de notes';
+  static const String _channelId = 'story_box_memories';
+  static const String _channelName = 'Souvenirs Chroniques';
+  static const String _channelDesc =
+      'Notifications pour redécouvrir vos anciennes stories';
+
+  static const String _channelIdCreate = 'story_box_create';
+  static const String _channelNameCreate = 'Creation de stories';
+  static const String _channelDescCreate =
+      'Notifications lors de la creation de stories';
 
   // Périodes de souvenirs (en jours)
   static const Map<int, String> memoryPeriods = {
@@ -56,14 +58,19 @@ class MemoryNotificationService {
     'Regardez ce que vous aviez noté',
     'Souvenirs, souvenirs...',
     'Une note du passé vous attend',
+    'Une pépite de votre collection...',
+    'Il s\'est passé quelque chose ce jour-là',
+    'Un moment précieux à redécouvrir',
+    'Votre carnet a de la mémoire !',
   ];
-  
+
   // Getters pour les préférences
   bool get notifyOnCreate => _notifyOnCreate;
   bool get memoriesEnabled => _memoriesEnabled;
   int get memoriesHour => _memoriesHour;
   int get memoriesMinute => _memoriesMinute;
-  String get memoriesTimeFormatted => '${_memoriesHour.toString().padLeft(2, '0')}:${_memoriesMinute.toString().padLeft(2, '0')}';
+  String get memoriesTimeFormatted =>
+      '${_memoriesHour.toString().padLeft(2, '0')}:${_memoriesMinute.toString().padLeft(2, '0')}';
 
   /// Initialise le service de notifications
   Future<void> init() async {
@@ -72,7 +79,7 @@ class MemoryNotificationService {
     try {
       // Charger les préférences
       await _loadPreferences();
-      
+
       // Configuration Android avec icône
       const androidSettings =
           AndroidInitializationSettings('@mipmap/launcher_icon');
@@ -106,7 +113,7 @@ class MemoryNotificationService {
       debugPrint('Notifications non disponibles: $e');
     }
   }
-  
+
   /// Charge les préférences utilisateur
   Future<void> _loadPreferences() async {
     try {
@@ -119,7 +126,7 @@ class MemoryNotificationService {
       debugPrint('Erreur chargement prefs: $e');
     }
   }
-  
+
   /// Sauvegarde les préférences
   Future<void> _savePreferences() async {
     try {
@@ -132,18 +139,18 @@ class MemoryNotificationService {
       debugPrint('Erreur sauvegarde prefs: $e');
     }
   }
-  
+
   /// Met à jour les préférences
   Future<void> setNotifyOnCreate(bool value) async {
     _notifyOnCreate = value;
     await _savePreferences();
   }
-  
+
   Future<void> setMemoriesEnabled(bool value) async {
     _memoriesEnabled = value;
     await _savePreferences();
   }
-  
+
   Future<void> setMemoriesTime(int hour, int minute) async {
     _memoriesHour = hour;
     _memoriesMinute = minute;
@@ -167,7 +174,7 @@ class MemoryNotificationService {
         showBadge: true,
       );
       await android.createNotificationChannel(channelMemories);
-      
+
       // Channel pour les créations
       const channelCreate = AndroidNotificationChannel(
         _channelIdCreate,
@@ -179,7 +186,7 @@ class MemoryNotificationService {
         showBadge: true,
       );
       await android.createNotificationChannel(channelCreate);
-      
+
       debugPrint('Channels Android crees');
     }
   }
@@ -249,7 +256,7 @@ class MemoryNotificationService {
       if (!_isInitialized) return;
 
       final title = note.title.isNotEmpty ? note.title : 'Nouvelle note';
-      
+
       const androidDetails = AndroidNotificationDetails(
         _channelIdCreate,
         _channelNameCreate,
@@ -312,7 +319,7 @@ class MemoryNotificationService {
         priority: Priority.max,
         playSound: true,
         enableVibration: true,
-        ticker: 'Note Box',
+        ticker: 'Chroniques',
         largeIcon: DrawableResourceAndroidBitmap('@mipmap/launcher_icon'),
         actions: <AndroidNotificationAction>[
           AndroidNotificationAction(
@@ -338,7 +345,7 @@ class MemoryNotificationService {
 
       await _notifications.show(
         id,
-        'Note Box - Test',
+        'Chroniques - Test',
         'Les notifications fonctionnent correctement !',
         details,
         payload: 'test',
@@ -488,67 +495,122 @@ class MemoryNotificationService {
     );
   }
 
-  /// Vérifie si des souvenirs sont disponibles et envoie une notification
-  Future<void> checkAndNotifyMemories() async {
+  /// Envoie une notification de note aléatoire (demandé par l'utilisateur)
+  Future<void> sendRandomNoteNotification() async {
+    if (!_isAvailable) return;
+
+    try {
+      await init();
+      if (!_isInitialized) return;
+
+      final notes = await NoteService.instance.getAllNotes();
+      if (notes.isEmpty) return;
+
+      final random = Random();
+      final note = notes[random.nextInt(notes.length)];
+
+      await sendMemoryNotification(note,
+          customMessage: 'Redécouvrez une note au hasard');
+      debugPrint('Notification note aléatoire envoyée');
+    } catch (e) {
+      debugPrint('Erreur notification aléatoire: $e');
+    }
+  }
+
+  /// Vérifie si c'est l'heure d'envoyer la notification
+  Future<void> checkAndNotifyMemories({bool force = false}) async {
     if (!_isAvailable || !_memoriesEnabled) return;
 
     try {
-      final notes = NoteService.instance.getAllNotes();
       final now = DateTime.now();
+      final prefs = await SharedPreferences.getInstance();
+      final lastNotifKey = 'last_notif_date';
+      final today = '${now.year}-${now.month}-${now.day}';
+
+      if (!force) {
+        // Heure configurée convertie en minutes depuis minuit
+        final configMinutes = _memoriesHour * 60 + _memoriesMinute;
+        final currentMinutes = now.hour * 60 + now.minute;
+
+        if (currentMinutes < configMinutes) {
+          debugPrint(
+              'Trop tôt pour les souvenirs ($currentMinutes < $configMinutes)');
+          await prefs.setString('last_notif_reason',
+              'En attente de ${memoriesTimeFormatted}');
+          return;
+        }
+
+        // Fenêtre de tir : on n'envoie que si on est dans l'heure qui suit l'heure prévue
+        // (Pour éviter d'envoyer un souvenir à 23h si le worker a été bloqué toute la journée)
+        if (currentMinutes > configMinutes + 60) {
+          debugPrint('Heure passée pour aujourd\'hui ($currentMinutes > ${configMinutes + 60})');
+          await prefs.setString('last_notif_reason', 'Heure dépassée pour aujourd\'hui');
+          return;
+        }
+
+        // Vérifier si on a déjà notifié aujourd'hui
+        if (prefs.getString(lastNotifKey) == today) {
+          debugPrint('Déjà notifié aujourd\'hui ($today)');
+          await prefs.setString(
+              'last_notif_reason', 'Déjà notifié aujourd\'hui');
+          return;
+        }
+      }
+
+      final notes = await NoteService.instance.getAllNotes();
+      if (notes.isEmpty) {
+        await prefs.setString('last_notif_reason', 'Aucune note disponible');
+        return;
+      }
+
       final random = Random();
-      
-      // Vérifier chaque période de souvenir
+
+      // 1. Chercher des souvenirs spécifiques (anniversaires, etc)
       for (final entry in memoryPeriods.entries) {
         final days = entry.key;
         final message = entry.value;
-        final tolerance = days < 60 ? 2 : 5; // Tolérance de 2j pour les courtes périodes, 5j sinon
-        
+        final tolerance = days < 60 ? 1 : 3;
+
         final periodNotes = notes.where((note) {
           final diff = now.difference(note.createdAt).inDays;
           return diff >= days - tolerance && diff <= days + tolerance;
         }).toList();
-        
+
         if (periodNotes.isNotEmpty) {
-          // Envoyer une notif pour cette période
           final note = periodNotes[random.nextInt(periodNotes.length)];
           await sendMemoryNotification(note, customMessage: message);
-          
-          // Si plusieurs notes dans la période, mentionner le nombre
-          if (periodNotes.length > 1) {
-            debugPrint('${periodNotes.length} notes trouvees pour la periode: $message');
-          }
-          return; // Une seule notif par check
+          await prefs.setString(lastNotifKey, today);
+          return;
         }
       }
 
-      // Si aucune période spéciale, envoyer un souvenir aléatoire (notes > 2 semaines)
-      final oldNotes = notes
-          .where((note) => now.difference(note.createdAt).inDays > 14)
-          .toList();
-      if (oldNotes.length >= 3) {
-        final note = oldNotes[random.nextInt(oldNotes.length)];
-        await sendMemoryNotification(note);
-      }
+      // 2. Sinon, envoyer une note aléatoire
+      final note = notes[random.nextInt(notes.length)];
+      await sendMemoryNotification(note,
+          customMessage: 'Un petit souvenir pour bien commencer la journée');
+      await prefs.setString(lastNotifKey, today);
+      await prefs.setString(
+          'last_notif_reason', 'Souvenir envoyé (${now.hour}:${now.minute})');
     } catch (e) {
       debugPrint('Erreur checkAndNotifyMemories: $e');
     }
   }
-  
+
   /// Retourne les prochaines notifications prévues
   List<Map<String, dynamic>> getUpcomingMemories() {
     final notes = NoteService.instance.getAllNotes();
     final now = DateTime.now();
     final upcoming = <Map<String, dynamic>>[];
-    
+
     for (final entry in memoryPeriods.entries) {
       final days = entry.key;
       final message = entry.value;
-      
+
       // Chercher les notes qui vont bientôt atteindre cette période
       for (final note in notes) {
         final noteAge = now.difference(note.createdAt).inDays;
         final daysUntil = days - noteAge;
-        
+
         if (daysUntil > 0 && daysUntil <= 7) {
           upcoming.add({
             'note': note,
@@ -559,33 +621,34 @@ class MemoryNotificationService {
         }
       }
     }
-    
+
     // Trier par date la plus proche
-    upcoming.sort((a, b) => (a['daysUntil'] as int).compareTo(b['daysUntil'] as int));
+    upcoming.sort(
+        (a, b) => (a['daysUntil'] as int).compareTo(b['daysUntil'] as int));
     return upcoming.take(10).toList(); // Max 10
   }
-  
+
   /// Retourne les statistiques de souvenirs disponibles
   Map<String, int> getMemoryStats() {
     final notes = NoteService.instance.getAllNotes();
     final now = DateTime.now();
     final stats = <String, int>{};
-    
+
     for (final entry in memoryPeriods.entries) {
       final days = entry.key;
       final message = entry.value;
       final tolerance = days < 60 ? 2 : 5;
-      
+
       final count = notes.where((note) {
         final diff = now.difference(note.createdAt).inDays;
         return diff >= days - tolerance && diff <= days + tolerance;
       }).length;
-      
+
       if (count > 0) {
         stats[message] = count;
       }
     }
-    
+
     return stats;
   }
 }

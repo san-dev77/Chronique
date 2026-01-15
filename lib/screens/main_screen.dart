@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'notes_screen.dart';
 import 'favorites_screen.dart';
 import 'memories_screen.dart';
@@ -9,6 +10,7 @@ import '../services/cloud_sync_service.dart';
 import '../services/connectivity_service.dart';
 import '../services/accent_color_service.dart';
 import '../theme/app_theme.dart';
+import '../services/sharing_service.dart';
 import 'dart:async';
 
 class MainScreen extends StatefulWidget {
@@ -75,28 +77,43 @@ class _MainScreenState extends State<MainScreen> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final isSignedIn = AuthService.instance.isSignedIn;
 
-    return Scaffold(
-      body: Stack(
-        children: [
-          _screens[_currentIndex],
-          // Banner connexion
-          if (!isSignedIn)
-            Positioned(
-              top: 0,
-              left: 0,
-              right: 0,
-              child: _buildConnectionBanner(context),
-            ),
-          // Badge sync (Affiche seulement en cas d'erreur ou offline)
-          if (isSignedIn && (_syncStatus == SyncStatus.error || _syncStatus == SyncStatus.offline))
-            Positioned(
-              top: MediaQuery.of(context).padding.top + 10,
-              left: 16,
-              child: _buildSyncBadge(),
-            ),
-        ],
+    return PopScope(
+      canPop: false, 
+      onPopInvoked: (didPop) async {
+        if (didPop) return;
+        
+        if (_currentIndex != 0) {
+          // Si on n'est pas sur le premier onglet, on y retourne
+          setState(() => _currentIndex = 0);
+        } else {
+          // Si on est déjà sur Stories, on quitte l'app proprement
+          // Au lieu de retourner sur l'écran de bienvenue
+          await SystemChannels.platform.invokeMethod('SystemNavigator.pop');
+        }
+      },
+      child: Scaffold(
+        body: Stack(
+          children: [
+            _screens[_currentIndex],
+            // Banner connexion
+            if (!isSignedIn)
+              Positioned(
+                top: 0,
+                left: 0,
+                right: 0,
+                child: _buildConnectionBanner(context),
+              ),
+            // Badge sync (Affiche seulement en cas d'erreur ou offline)
+            if (isSignedIn && (_syncStatus == SyncStatus.error || _syncStatus == SyncStatus.offline))
+              Positioned(
+                top: MediaQuery.of(context).padding.top + 10,
+                left: 16,
+                child: _buildSyncBadge(),
+              ),
+          ],
+        ),
+        bottomNavigationBar: _buildNav(isDark),
       ),
-      bottomNavigationBar: _buildNav(isDark),
     );
   }
 
@@ -296,7 +313,7 @@ class _MainScreenState extends State<MainScreen> {
                   const SizedBox(width: 10),
                   Expanded(
                     child: Text(
-                      'Connectez-vous pour synchroniser vos notes sur tous vos appareils.',
+                      'Connectez-vous pour synchroniser vos stories sur tous vos appareils.',
                       style: TextStyle(
                         fontSize: 12,
                         color: isDark ? Colors.white60 : Colors.grey.shade600,
@@ -350,10 +367,49 @@ class _MainScreenState extends State<MainScreen> {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: [
-              _buildNavItem(0, Icons.note_alt_outlined, Icons.note_alt_rounded,
-                  'Notes', isDark, accentColor),
-              _buildNavItem(1, Icons.people_outline_rounded, Icons.people_rounded,
-                  'Partage', isDark, accentColor),
+              _buildNavItem(0, Icons.auto_stories_outlined, Icons.auto_stories_rounded,
+                  'Stories', isDark, accentColor),
+              
+              // BADGE WRAPPER FOR SHARE TAB
+              StreamBuilder<int>(
+                stream: SharingService.instance.watchUnreadReceivedNotesCount(),
+                builder: (context, snapshot) {
+                  final count = snapshot.data ?? 0;
+                  return Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      _buildNavItem(1, Icons.people_outline_rounded, Icons.people_rounded,
+                          'Partage', isDark, accentColor),
+                      if (count > 0)
+                        Positioned(
+                          top: 10,
+                          right: 10,
+                          child: Container(
+                            padding: const EdgeInsets.all(4),
+                            decoration: const BoxDecoration(
+                              color: Colors.redAccent,
+                              shape: BoxShape.circle,
+                            ),
+                            constraints: const BoxConstraints(
+                              minWidth: 16,
+                              minHeight: 16,
+                            ),
+                            child: Text(
+                              count > 9 ? '9+' : count.toString(),
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 10,
+                                fontWeight: FontWeight.bold,
+                              ),
+                              textAlign: TextAlign.center,
+                            ),
+                          ),
+                        ),
+                    ],
+                  );
+                }
+              ),
+
               _buildNavItem(2, Icons.auto_awesome_outlined,
                   Icons.auto_awesome_rounded, 'Souvenirs', isDark, accentColor),
               _buildNavItem(3, Icons.favorite_outline_rounded,

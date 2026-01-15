@@ -118,6 +118,7 @@ class NoteService {
 
   List<Note> getAllNotes() {
     if (_notesBox == null || !_notesBox!.isOpen) {
+      print('NoteService: getAllNotes called while box is closed. Returning empty.');
       return [];
     }
 

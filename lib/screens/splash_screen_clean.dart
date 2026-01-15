@@ -215,13 +215,13 @@ class _SplashScreenCleanState extends State<SplashScreenClean>
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       // Logo
-                      const NoteLogo(size: 140),
+                      const NoteLogo(size: 140, isRound: true),
 
                       const SizedBox(height: 40),
 
                       // Titre
                       const Text(
-                        'Note Box',
+                        'Chroniques',
                         style: TextStyle(
                           fontSize: 42,
                           fontWeight: FontWeight.w800,
@@ -234,7 +234,7 @@ class _SplashScreenCleanState extends State<SplashScreenClean>
 
                       // Sous-titre
                       Text(
-                        'Vos idées, organisées',
+                        'The Story Box',
                         style: TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.w500,

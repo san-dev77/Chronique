@@ -8,6 +8,8 @@ import '../utils/page_transitions.dart';
 import '../theme/app_theme.dart';
 import 'note_edit_screen.dart';
 import 'note_view_screen.dart';
+import '../widgets/user_avatar.dart';
+import '../services/auth_service.dart';
 
 class FavoritesScreen extends StatefulWidget {
   const FavoritesScreen({super.key});
@@ -29,7 +31,8 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
   Future<void> _load() async {
     setState(() => _isLoading = true);
     try {
-      final all = await NoteService.instance.getAllNotes();
+      await NoteService.instance.waitReady();
+      final all = NoteService.instance.getAllNotes();
       _favorites = all.where((n) => n.isFavorite).toList()
         ..sort((a, b) => b.modifiedAt.compareTo(a.modifiedAt));
     } finally {
@@ -119,35 +122,47 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
                 color: Colors.white, size: 28),
           ),
           const SizedBox(width: 16),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Favoris',
-                style: TextStyle(
-                  fontSize: 28,
-                  fontWeight: FontWeight.w800,
-                  color: isDark ? AppTheme.textLight : AppTheme.textDark,
-                  letterSpacing: -0.5,
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Text(
+                      'Favoris',
+                      style: TextStyle(
+                        fontSize: 28,
+                        fontWeight: FontWeight.w800,
+                        color: isDark ? AppTheme.textLight : AppTheme.textDark,
+                        letterSpacing: -0.5,
+                      ),
+                    ),
+                    const Spacer(),
+                    UserAvatar(
+                      displayName: AuthService.instance.userName ?? '?',
+                      userId: AuthService.instance.userId,
+                      radius: 20,
+                    ),
+                  ],
                 ),
-              ),
-              const SizedBox(height: 4),
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                decoration: BoxDecoration(
-                  color: AppTheme.skyBlue.withOpacity(isDark ? 0.2 : 0.1),
-                  borderRadius: BorderRadius.circular(10),
+                const SizedBox(height: 4),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: AppTheme.skyBlue.withOpacity(isDark ? 0.2 : 0.1),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text(
+                    '${_favorites.length} stories',
+                    style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: AppTheme.skyBlue),
+                  ),
                 ),
-                child: Text(
-                  '${_favorites.length} notes',
-                  style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      color: AppTheme.skyBlue),
-                ),
-              ),
-            ],
+              ],
+            ),
           ),
         ],
       ),
@@ -187,7 +202,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
               ),
               const SizedBox(height: 8),
               Text(
-                'Ajoutez des notes à vos favoris',
+                'Ajoutez des stories à vos favoris',
                 style: TextStyle(
                   fontSize: 15,
                   color: isDark ? AppTheme.textMutedDark : AppTheme.textMuted,

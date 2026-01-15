@@ -5,126 +5,11 @@ import '../models/reaction.dart';
 import '../services/sharing_service.dart';
 import '../services/auth_service.dart';
 import '../services/image_base64_service.dart';
+import '../widgets/user_avatar.dart';
 import '../theme/app_theme.dart';
 import '../utils/date_formatter.dart';
+import '../widgets/rich_text_viewer.dart';
 
-/// Un widget dédié pour l'effet machine à écrire afin d'éviter de reconstruire tout l'écran
-class TypewriterText extends StatefulWidget {
-  final String text;
-  final TextStyle style;
-  final Duration speed;
-  final Duration startDelay;
-  final bool skip;
-  final VoidCallback? onComplete;
-
-  const TypewriterText({
-    super.key,
-    required this.text,
-    required this.style,
-    this.speed = const Duration(milliseconds: 25),
-    this.startDelay = Duration.zero,
-    this.skip = false,
-    this.onComplete,
-  });
-
-  @override
-  State<TypewriterText> createState() => _TypewriterTextState();
-}
-
-class _TypewriterTextState extends State<TypewriterText>
-    with TickerProviderStateMixin {
-  String _displayedText = '';
-  int _currentIndex = 0;
-  Timer? _timer;
-  late AnimationController _cursorController;
-
-  @override
-  void initState() {
-    super.initState();
-    _cursorController = AnimationController(
-      duration: const Duration(milliseconds: 500),
-      vsync: this,
-    )..repeat(reverse: true);
-
-    if (widget.skip) {
-      _displayedText = widget.text;
-      _currentIndex = widget.text.length;
-    } else {
-      if (widget.startDelay == Duration.zero) {
-        _startTyping();
-      } else {
-        Future.delayed(widget.startDelay, _startTyping);
-      }
-    }
-  }
-
-  @override
-  void didUpdateWidget(TypewriterText oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (widget.skip && !oldWidget.skip) {
-      _timer?.cancel();
-      setState(() {
-        _displayedText = widget.text;
-        _currentIndex = widget.text.length;
-      });
-      // Utiliser addPostFrameCallback pour éviter l'erreur "setState during build"
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        widget.onComplete?.call();
-      });
-    }
-  }
-
-  void _startTyping() {
-    _timer = Timer.periodic(widget.speed, (timer) {
-      if (_currentIndex < widget.text.length) {
-        if (mounted) {
-          setState(() {
-            _displayedText = widget.text.substring(0, _currentIndex + 1);
-            _currentIndex++;
-          });
-        }
-      } else {
-        timer.cancel();
-        // Optionnel: sécuriser ici aussi
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) widget.onComplete?.call();
-        });
-      }
-    });
-  }
-
-  @override
-  void dispose() {
-    _timer?.cancel();
-    _cursorController.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return RichText(
-      text: TextSpan(
-        children: [
-          TextSpan(text: _displayedText, style: widget.style),
-          if (_currentIndex < widget.text.length)
-            WidgetSpan(
-              child: AnimatedBuilder(
-                animation: _cursorController,
-                builder: (context, child) => Opacity(
-                  opacity: _cursorController.value,
-                  child: Container(
-                    width: 2,
-                    height: (widget.style.fontSize ?? 16) * 1.2,
-                    color: AppTheme.skyBlue,
-                  ),
-                ),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-}
 
 /// Écran pour visualiser une note partagée avec réactions et commentaires
 class SharedNoteViewScreen extends StatefulWidget {
@@ -256,16 +141,30 @@ class _SharedNoteViewScreenState extends State<SharedNoteViewScreen>
               icon: Icon(Icons.arrow_back_rounded, color: textColor),
               onPressed: () => Navigator.pop(context),
             ),
-            title: Text(
-              isRecipient
-                  ? 'De ${note.senderName}'
-                  : 'Partagé avec ${note.recipientEmail}',
-              style: TextStyle(
-                color: textColor.withOpacity(0.7),
-                fontSize: 14,
-                fontWeight: FontWeight.w700,
-                letterSpacing: 0.5,
-              ),
+            title: Row(
+              children: [
+                UserAvatar(
+                  userId: note.senderId,
+                  displayName: note.senderName,
+                  radius: 12,
+                  heroTag: 'avatar_view_${note.id}',
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    isRecipient
+                        ? 'De ${note.senderName}'
+                        : 'Partagé avec ${note.recipientEmail}',
+                    style: TextStyle(
+                      color: textColor.withOpacity(0.7),
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 0.5,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
             ),
           ),
           extendBodyBehindAppBar: true,
@@ -299,13 +198,13 @@ class _SharedNoteViewScreenState extends State<SharedNoteViewScreen>
                               const SizedBox(height: 32),
                             ],
 
-                            // 2. TITRE - Typewriter isolé
+                            // 2. TITRE - Rich Text avec Typewriter
                             if (note.title.isNotEmpty && _showContent)
-                              TypewriterText(
+                              RichTextViewer(
                                 key: ValueKey('title_${note.id}'),
-                                text: note.title,
+                                content: note.title,
                                 skip: _storyFinished,
-                                style: TextStyle(
+                                baseStyle: TextStyle(
                                   fontSize: 32,
                                   fontWeight: FontWeight.w900,
                                   color: textColor,
@@ -317,13 +216,14 @@ class _SharedNoteViewScreenState extends State<SharedNoteViewScreen>
                             if (note.title.isNotEmpty)
                               const SizedBox(height: 24),
 
-                            // 3. CONTENU - Typewriter isolé
+                            // 3. CONTENU - Rich Text avec Typewriter
                             if (note.content.isNotEmpty && _showContent)
-                              TypewriterText(
+                              RichTextViewer(
                                 key: ValueKey('content_${note.id}'),
-                                text: note.content,
+                                content: note.content,
+                                formattedContent: note.formattedContent,
                                 skip: _storyFinished,
-                                style: TextStyle(
+                                baseStyle: TextStyle(
                                   fontSize: 18,
                                   color: textColor.withOpacity(0.9),
                                   height: 1.7,
@@ -571,7 +471,7 @@ class _SharedNoteViewScreenState extends State<SharedNoteViewScreen>
           ),
           const SizedBox(height: 12),
           ...comments.map(
-              (comment) => _buildCommentCard(comment, isDark, primaryColor)),
+              (comment) => _buildCommentCard(comment, isDark, primaryColor, note)),
         ],
       ],
     );
@@ -585,7 +485,10 @@ class _SharedNoteViewScreenState extends State<SharedNoteViewScreen>
     return counts;
   }
 
-  Widget _buildCommentCard(Reaction comment, bool isDark, Color primaryColor) {
+  Widget _buildCommentCard(Reaction comment, bool isDark, Color primaryColor, SharedNote note) {
+    // Essayer de trouver l'utilisateur dans les membres (ou utiliser les infos de la note si c'est l'auteur)
+    final bool isAuthor = comment.userId == note.senderId;
+    
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(12),
@@ -607,19 +510,12 @@ class _SharedNoteViewScreenState extends State<SharedNoteViewScreen>
         children: [
           Row(
             children: [
-              CircleAvatar(
+              // Avatar centralisé et robuste
+              UserAvatar(
+                userId: comment.userId,
+                displayName: comment.userName,
                 radius: 14,
-                backgroundColor: primaryColor.withOpacity(0.15),
-                child: Text(
-                  comment.userName.isNotEmpty
-                      ? comment.userName[0].toUpperCase()
-                      : '?',
-                  style: TextStyle(
-                    color: primaryColor,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 12,
-                  ),
-                ),
+                heroTag: 'avatar_comment_${comment.id}',
               ),
               const SizedBox(width: 8),
               Text(
@@ -726,6 +622,13 @@ class _SharedNoteViewScreenState extends State<SharedNoteViewScreen>
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
                 child: Row(
                   children: [
+                    UserAvatar(
+                      userId: AuthService.instance.userId,
+                      displayName: AuthService.instance.userName ?? '?',
+                      radius: 18,
+                      heroTag: 'avatar_comment_input',
+                    ),
+                    const SizedBox(width: 8),
                     Expanded(
                       child: TextField(
                         controller: _commentController,

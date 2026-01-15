@@ -8,6 +8,8 @@ import '../utils/page_transitions.dart';
 import '../theme/app_theme.dart';
 import 'note_edit_screen.dart';
 import 'note_view_screen.dart';
+import '../widgets/user_avatar.dart';
+import '../services/auth_service.dart';
 
 class NotesScreen extends StatefulWidget {
   const NotesScreen({super.key});
@@ -46,10 +48,10 @@ class _NotesScreenState extends State<NotesScreen> {
   }
 
   void _applyFilters() {
-      _filteredNotes = _notes.where((note) {
+    _filteredNotes = _notes.where((note) {
       final matchSearch = _searchQuery.isEmpty ||
-            note.title.toLowerCase().contains(_searchQuery.toLowerCase()) ||
-            note.content.toLowerCase().contains(_searchQuery.toLowerCase());
+          note.title.toLowerCase().contains(_searchQuery.toLowerCase()) ||
+          note.content.toLowerCase().contains(_searchQuery.toLowerCase());
 
       bool matchFilter = true;
       if (_selectedFilter == 1) matchFilter = note.isFavorite;
@@ -73,41 +75,43 @@ class _NotesScreenState extends State<NotesScreen> {
   }
 
   Future<void> _saveNote(Note note) async {
-      await NoteService.instance.saveNote(note);
+    await NoteService.instance.saveNote(note);
     _loadNotes();
   }
 
   Future<void> _deleteNote(Note note) async {
-      await NoteService.instance.deleteNote(note.id);
+    await NoteService.instance.deleteNote(note.id);
     _loadNotes();
   }
 
-  void _toggleFavorite(Note note) =>
-      _saveNote(note.copyWith(isFavorite: !note.isFavorite));
+  void _toggleFavorite(Note note) {
+    note.isFavorite = !note.isFavorite;
+    _saveNote(note);
+  }
 
   void _openNote(Note note) {
     Navigator.push(
-      context,
-      PageTransitions.heroTransition(
-        NoteViewScreen(
-          note: note,
-          onEdit: () {
-            Navigator.pop(context);
-            _editNote(note);
-          },
-          onDelete: () {
-            Navigator.pop(context);
-            _deleteNote(note);
-          },
-          onToggleFavorite: () => _toggleFavorite(note),
-        ),
+        context,
+        PageTransitions.heroTransition(
+          NoteViewScreen(
+            note: note,
+            onEdit: () {
+              Navigator.pop(context);
+              _editNote(note);
+            },
+            onDelete: () {
+              Navigator.pop(context);
+              _deleteNote(note);
+            },
+            onToggleFavorite: () => _toggleFavorite(note),
+          ),
         ));
   }
 
   void _editNote(Note note) {
     Navigator.push(
-      context,
-      PageTransitions.scaleTransition(
+        context,
+        PageTransitions.scaleTransition(
           NoteEditScreen(note: note, onSave: _saveNote),
         ));
   }
@@ -118,17 +122,17 @@ class _NotesScreenState extends State<NotesScreen> {
         PageTransitions.scaleTransition(
           NoteEditScreen(
             note: Note(
-      id: DateTime.now().millisecondsSinceEpoch.toString(),
-      title: '',
-      content: '',
-      createdAt: DateTime.now(),
-      modifiedAt: DateTime.now(),
-      imagePaths: [],
-      color: Colors.white,
-      isFavorite: false,
+              id: DateTime.now().millisecondsSinceEpoch.toString(),
+              title: '',
+              content: '',
+              createdAt: DateTime.now(),
+              modifiedAt: DateTime.now(),
+              imagePaths: [],
+              color: Colors.white,
+              isFavorite: false,
             ),
-          onSave: _saveNote,
-        ),
+            onSave: _saveNote,
+          ),
         ));
   }
 
@@ -148,23 +152,23 @@ class _NotesScreenState extends State<NotesScreen> {
         slivers: [
           // Card bleue avec header, search et filtres (scrollable)
           SliverToBoxAdapter(
-                    child: Container(
+            child: Container(
               margin: const EdgeInsets.only(bottom: 20),
-                      decoration: BoxDecoration(
+              decoration: BoxDecoration(
                 color: AppTheme.skyBlue,
                 borderRadius: const BorderRadius.only(
                   bottomLeft: Radius.circular(32),
                   bottomRight: Radius.circular(32),
                 ),
-                        boxShadow: [
-                          BoxShadow(
+                boxShadow: [
+                  BoxShadow(
                     color: AppTheme.skyBlue.withOpacity(0.3),
-                            blurRadius: 20,
+                    blurRadius: 20,
                     offset: const Offset(0, 8),
-                          ),
-                        ],
-                      ),
-                      child: Column(
+                  ),
+                ],
+              ),
+              child: Column(
                 children: [
                   // Safe area padding
                   SizedBox(height: statusBarHeight + 8),
@@ -192,72 +196,70 @@ class _NotesScreenState extends State<NotesScreen> {
     return Padding(
       padding: const EdgeInsets.fromLTRB(24, 16, 24, 16),
       child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
           // Logo de l'app
-                              Container(
-            width: 56,
-            height: 56,
-                                decoration: BoxDecoration(
+          Container(
+            width: 65,
+            height: 65,
+            decoration: BoxDecoration(
               color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: Colors.black.withOpacity(0.1),
-                  blurRadius: 8,
+              borderRadius: BorderRadius.circular(50),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.1),
+                  blurRadius: 1,
                   offset: const Offset(0, 2),
-                                    ),
-                                  ],
-                                ),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(16),
-              child: Image.asset(
-                'assets/logo.png',
-                fit: BoxFit.cover,
-              ),
-                                ),
-                              ),
+                ),
+              ],
+            ),
+            child: UserAvatar(
+              displayName: AuthService.instance.userName ?? '?',
+              userId: AuthService.instance.userId,
+              radius: 28,
+            ),
+          ),
           const SizedBox(width: 16),
           // Texte
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
                 const Text(
-                  'Mes Notes',
+                  'Mes Stories',
                   style: TextStyle(
-                                        fontSize: 28,
-                                        fontWeight: FontWeight.w800,
+                    fontSize: 28,
+                    fontWeight: FontWeight.w800,
                     color: Colors.white,
                     letterSpacing: -0.5,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 6),
+                  ),
+                ),
+                const SizedBox(height: 6),
                 Wrap(
                   spacing: 8,
                   children: [
                     _buildStatWhite('${_notes.length}', 'notes'),
                     if (favCount > 0) _buildStatWhite('$favCount', '❤️'),
                   ],
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 
   Widget _buildStatWhite(String value, String label) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                                decoration: BoxDecoration(
-                                  color: Colors.white.withOpacity(0.2),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.2),
         borderRadius: BorderRadius.circular(10),
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
           Text(value,
               style: const TextStyle(
                   fontSize: 13,
@@ -265,7 +267,7 @@ class _NotesScreenState extends State<NotesScreen> {
                   color: Colors.white)),
           const SizedBox(width: 4),
           Text(label,
-                                      style: TextStyle(
+              style: TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.w500,
                   color: Colors.white.withOpacity(0.9))),
@@ -278,45 +280,45 @@ class _NotesScreenState extends State<NotesScreen> {
     return Padding(
       padding: const EdgeInsets.fromLTRB(24, 8, 24, 8),
       child: Container(
-                            decoration: BoxDecoration(
+        decoration: BoxDecoration(
           color: isDark ? AppTheme.cardDark : Colors.white,
           borderRadius: BorderRadius.circular(16),
-                              boxShadow: [
-                                BoxShadow(
+          boxShadow: [
+            BoxShadow(
               color: Colors.black.withOpacity(0.08),
               blurRadius: 16,
               offset: const Offset(0, 4),
-                                ),
-                              ],
-                            ),
-                            child: TextField(
-                              controller: _searchController,
+            ),
+          ],
+        ),
+        child: TextField(
+          controller: _searchController,
           style: TextStyle(
               color: isDark ? AppTheme.textLight : AppTheme.textDark,
               fontSize: 15),
-                              decoration: InputDecoration(
+          decoration: InputDecoration(
             hintText: 'Rechercher une note...',
-                                hintStyle: TextStyle(
+            hintStyle: TextStyle(
                 color: isDark ? AppTheme.textMutedDark : AppTheme.textMuted),
             prefixIcon: Icon(Icons.search_rounded,
                 color: isDark ? AppTheme.textMutedDark : AppTheme.textMuted),
-                                suffixIcon: _searchQuery.isNotEmpty
-                                    ? IconButton(
+            suffixIcon: _searchQuery.isNotEmpty
+                ? IconButton(
                     icon: Icon(Icons.close_rounded,
                         color: isDark
                             ? AppTheme.textMutedDark
                             : AppTheme.textMuted,
                         size: 20),
                     onPressed: _searchController.clear,
-                                      )
-                                    : null,
-                                border: InputBorder.none,
+                  )
+                : null,
+            border: InputBorder.none,
             contentPadding:
                 const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                      ),
-                    ),
-                  ),
-                );
+          ),
+        ),
+      ),
+    );
   }
 
   Widget _buildFilters(bool isDark) {
@@ -338,24 +340,24 @@ class _NotesScreenState extends State<NotesScreen> {
                   duration: const Duration(milliseconds: 200),
                   padding:
                       const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                              decoration: BoxDecoration(
+                  decoration: BoxDecoration(
                     color:
                         selected ? Colors.white : Colors.white.withOpacity(0.2),
                     borderRadius: BorderRadius.circular(12),
-                              ),
-                              child: Text(
+                  ),
+                  child: Text(
                     _filters[i],
-                                style: TextStyle(
+                    style: TextStyle(
                       fontSize: 13,
                       fontWeight: FontWeight.w600,
                       color: selected ? AppTheme.skyBlue : Colors.white,
-                          ),
+                    ),
                   ),
                 ),
-                      ),
-                    );
-          }),
               ),
+            );
+          }),
+        ),
       ),
     );
   }
@@ -398,7 +400,7 @@ class _NotesScreenState extends State<NotesScreen> {
         children: [
           Container(
             padding: const EdgeInsets.all(28),
-        decoration: BoxDecoration(
+            decoration: BoxDecoration(
               color: AppTheme.skyBlue.withOpacity(0.1),
               shape: BoxShape.circle,
             ),
@@ -415,7 +417,7 @@ class _NotesScreenState extends State<NotesScreen> {
               fontSize: 22,
               fontWeight: FontWeight.w700,
               color: isDark ? AppTheme.textLight : AppTheme.textDark,
-                  ),
+            ),
           ),
           const SizedBox(height: 8),
           Text(

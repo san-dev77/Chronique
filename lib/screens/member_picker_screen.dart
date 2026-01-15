@@ -3,8 +3,9 @@ import '../models/note.dart';
 import '../services/sharing_service.dart';
 import '../services/auth_service.dart';
 import '../theme/app_theme.dart';
+import '../widgets/user_avatar.dart';
 
-/// Écran de sélection Multiple de membres pour partager une note
+/// Écran de sélection Multiple de membres pour partager une story
 class MemberPickerScreen extends StatefulWidget {
   final Note note;
 
@@ -93,7 +94,7 @@ class _MemberPickerScreenState extends State<MemberPickerScreen> {
         Navigator.pop(context, true);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Note partagee avec $successCount membre(s) !'),
+            content: Text('Story partagée avec $successCount membre(s) !'),
             backgroundColor: AppTheme.skyBlue,
             behavior: SnackBarBehavior.floating,
           ),
@@ -114,63 +115,110 @@ class _MemberPickerScreenState extends State<MemberPickerScreen> {
 
     return Scaffold(
       backgroundColor: isDark ? const Color(0xFF121212) : const Color(0xFFF8F9FA),
+      extendBodyBehindAppBar: true,
       appBar: AppBar(
-        title: const Text('Partager avec...', style: TextStyle(fontWeight: FontWeight.w800)),
+        title: Text(
+          'Partager avec...',
+          style: TextStyle(
+            fontWeight: FontWeight.w800,
+            color: isDark ? Colors.white : Colors.black87,
+            letterSpacing: -0.5,
+          ),
+        ),
         centerTitle: true,
         elevation: 0,
-        backgroundColor: Colors.transparent,
+        backgroundColor: (isDark ? Colors.black : Colors.white).withOpacity(0.8),
+        iconTheme: IconThemeData(color: isDark ? Colors.white : Colors.black87),
       ),
-      body: Column(
-        children: [
-          _buildSearchBar(isDark, primaryColor),
-          if (_selectedMemberIds.isNotEmpty) _buildSelectionHeader(primaryColor),
-          Expanded(
-            child: _isLoading 
-              ? const Center(child: CircularProgressIndicator())
-              : _filteredMembers.isEmpty 
-                ? _buildEmptyState(isDark)
-                : ListView.builder(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    itemCount: _filteredMembers.length,
-                    itemBuilder: (context, index) => _buildMemberCard(_filteredMembers[index], isDark, primaryColor),
-                  ),
+      body: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: isDark
+                ? [Colors.black, const Color(0xFF1A1A1A)]
+                : [Colors.white, const Color(0xFFF0F4F8)],
           ),
-        ],
+        ),
+        child: SafeArea(
+          child: Column(
+            children: [
+              _buildSearchBar(isDark, primaryColor),
+              if (_selectedMemberIds.isNotEmpty) _buildSelectionHeader(primaryColor),
+              Expanded(
+                child: _isLoading
+                    ? Center(child: CircularProgressIndicator(color: primaryColor))
+                    : _filteredMembers.isEmpty
+                        ? _buildEmptyState(isDark)
+                        : ListView.separated(
+                            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                            itemCount: _filteredMembers.length,
+                            separatorBuilder: (context, index) => const SizedBox(height: 12),
+                            itemBuilder: (context, index) =>
+                                _buildMemberCard(_filteredMembers[index], isDark, primaryColor),
+                          ),
+              ),
+            ],
+          ),
+        ),
       ),
       floatingActionButton: _selectedMemberIds.isEmpty || _isSharing
           ? null
-          : FloatingActionButton.extended(
-              onPressed: _shareWithSelected,
-              backgroundColor: primaryColor,
-              icon: const Icon(Icons.send_rounded, color: Colors.white),
-              label: Text('Partager (${_selectedMemberIds.length})', 
-                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+          : Container(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(30),
+                boxShadow: [
+                  BoxShadow(
+                    color: primaryColor.withOpacity(0.4),
+                    blurRadius: 20,
+                    offset: const Offset(0, 8),
+                  ),
+                ],
+              ),
+              child: FloatingActionButton.extended(
+                onPressed: _shareWithSelected,
+                backgroundColor: primaryColor,
+                elevation: 0,
+                icon: const Icon(Icons.send_rounded, color: Colors.white),
+                label: Text(
+                  'Partager (${_selectedMemberIds.length})',
+                  style: const TextStyle(
+                      color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
+                ),
+              ),
             ),
     );
   }
 
   Widget _buildSearchBar(bool isDark, Color primaryColor) {
     return Padding(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.fromLTRB(20, 10, 20, 20),
       child: Container(
         decoration: BoxDecoration(
-          color: isDark ? Colors.white.withOpacity(0.08) : Colors.white,
-          borderRadius: BorderRadius.circular(16),
+          color: isDark ? Colors.grey.shade900 : Colors.white,
+          borderRadius: BorderRadius.circular(20),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(isDark ? 0.3 : 0.05),
-              blurRadius: 10,
-              offset: const Offset(0, 4),
+              color: Colors.black.withOpacity(isDark ? 0.3 : 0.06),
+              blurRadius: 15,
+              offset: const Offset(0, 5),
             ),
           ],
         ),
         child: TextField(
           controller: _searchController,
+          style: TextStyle(
+              fontSize: 16, color: isDark ? Colors.white : const Color(0xFF2D3436)),
           decoration: InputDecoration(
-            hintText: 'Rechercher un membre ou un email...',
-            prefixIcon: Icon(Icons.search, color: primaryColor),
+            hintText: 'Rechercher un membre...',
+            hintStyle: TextStyle(
+                color: isDark ? Colors.grey.shade600 : Colors.grey.shade400,
+                fontWeight: FontWeight.w500),
+            prefixIcon: Icon(Icons.search_rounded,
+                color: isDark ? Colors.grey : primaryColor),
             border: InputBorder.none,
-            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            contentPadding:
+                const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
           ),
         ),
       ),
@@ -179,15 +227,31 @@ class _MemberPickerScreenState extends State<MemberPickerScreen> {
 
   Widget _buildSelectionHeader(Color primaryColor) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 4),
       child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text('${_selectedMemberIds.length} sélectionné(s)', 
-            style: TextStyle(color: primaryColor, fontWeight: FontWeight.bold)),
-          const Spacer(),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            decoration: BoxDecoration(
+              color: primaryColor.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Text(
+              '${_selectedMemberIds.length} sélectionné(s)',
+              style: TextStyle(
+                  color: primaryColor,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 14),
+            ),
+          ),
           TextButton(
             onPressed: () => setState(() => _selectedMemberIds.clear()),
-            child: const Text('Tout désélectionner'),
+            style: TextButton.styleFrom(
+              foregroundColor: Colors.grey,
+              textStyle: const TextStyle(fontWeight: FontWeight.w600),
+            ),
+            child: const Text('Tout effacer'),
           ),
         ],
       ),
@@ -199,48 +263,95 @@ class _MemberPickerScreenState extends State<MemberPickerScreen> {
 
     return AnimatedContainer(
       duration: const Duration(milliseconds: 200),
-      margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
-        color: isSelected 
-          ? primaryColor.withOpacity(0.1) 
-          : (isDark ? Colors.white.withOpacity(0.05) : Colors.white),
-        borderRadius: BorderRadius.circular(20),
+        color: isSelected
+            ? primaryColor.withOpacity(isDark ? 0.2 : 0.1)
+            : (isDark ? const Color(0xFF2C2C2C) : Colors.white),
+        borderRadius: BorderRadius.circular(24),
         border: Border.all(
-          color: isSelected ? primaryColor : Colors.transparent,
-          width: 2,
+          color: isSelected
+              ? primaryColor
+              : (isDark ? Colors.white10 : Colors.black.withOpacity(0.05)),
+          width: isSelected ? 2 : 1,
         ),
+        boxShadow: isSelected
+            ? [
+                BoxShadow(
+                    color: primaryColor.withOpacity(0.2),
+                    blurRadius: 12,
+                    offset: const Offset(0, 4))
+              ]
+            : [
+                BoxShadow(
+                    color: Colors.black.withOpacity(isDark ? 0.2 : 0.03),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2))
+              ],
       ),
-      child: ListTile(
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        leading: Stack(
-          children: [
-            CircleAvatar(
-              radius: 26,
-              backgroundColor: primaryColor.withOpacity(0.1),
-              backgroundImage: member.photoUrl != null ? NetworkImage(member.photoUrl!) : null,
-              child: member.photoUrl == null 
-                ? Text(member.displayName.isNotEmpty ? member.displayName[0].toUpperCase() : '?',
-                    style: TextStyle(color: primaryColor, fontWeight: FontWeight.bold, fontSize: 20))
-                : null,
-            ),
-            if (isSelected)
-              Positioned(
-                right: 0,
-                bottom: 0,
-                child: Container(
-                  padding: const EdgeInsets.all(2),
-                  decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
-                  child: Icon(Icons.check_circle, color: primaryColor, size: 20),
+      child: InkWell(
+        onTap: () => _toggleSelection(member.uid),
+        borderRadius: BorderRadius.circular(24),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          child: Row(
+            children: [
+              // Avatar
+              UserAvatar(
+                displayName: member.displayName,
+                photoUrl: member.photoUrl,
+                photoBase64: member.photoBase64,
+                profileColor: member.profileColor,
+                radius: 28,
+              ),
+              const SizedBox(width: 16),
+
+              // Infos
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      member.displayName,
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                        color: isDark ? Colors.white : const Color(0xFF2D3436),
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      member.email,
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: isDark ? Colors.grey.shade400 : Colors.grey.shade600,
+                        fontWeight: FontWeight.w500,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
                 ),
               ),
-          ],
+
+              // Checkbox custom
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                width: 24,
+                height: 24,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: isSelected ? primaryColor : Colors.transparent,
+                  border: Border.all(
+                    color: isSelected ? primaryColor : Colors.grey.shade400,
+                    width: 2,
+                  ),
+                ),
+                child: isSelected
+                    ? const Icon(Icons.check, size: 16, color: Colors.white)
+                    : null,
+              ),
+            ],
+          ),
         ),
-        title: Text(member.displayName, 
-          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, 
-            color: isDark ? Colors.white : Colors.black87)),
-        subtitle: Text(member.email, 
-          style: TextStyle(fontSize: 13, color: isDark ? Colors.white54 : Colors.grey)),
-        onTap: () => _toggleSelection(member.uid),
       ),
     );
   }
@@ -250,10 +361,26 @@ class _MemberPickerScreenState extends State<MemberPickerScreen> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.person_search_rounded, size: 80, color: Colors.grey.withOpacity(0.2)),
-          const SizedBox(height: 16),
-          Text(_searchController.text.isEmpty ? 'Aucun membre' : 'Aucun résultat', 
-            style: const TextStyle(color: Colors.grey, fontWeight: FontWeight.w600)),
+          Container(
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: (isDark ? Colors.white : Colors.black).withOpacity(0.03),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(Icons.person_search_rounded,
+                size: 64, color: Colors.grey.withOpacity(0.5)),
+          ),
+          const SizedBox(height: 24),
+          Text(
+            _searchController.text.isEmpty
+                ? 'Aucun autre membre trouvé'
+                : 'Aucun résultat',
+            style: TextStyle(
+              color: isDark ? Colors.grey.shade400 : Colors.grey.shade600,
+              fontWeight: FontWeight.w600,
+              fontSize: 16,
+            ),
+          ),
         ],
       ),
     );

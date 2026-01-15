@@ -7,6 +7,7 @@ import '../services/auth_service.dart';
 import '../theme/app_theme.dart';
 import '../utils/date_formatter.dart';
 import 'member_picker_screen.dart';
+import '../widgets/rich_text_viewer.dart';
 
 class NoteViewScreen extends StatefulWidget {
   final Note note;
@@ -240,26 +241,20 @@ class _NoteViewScreenState extends State<NoteViewScreen>
                             const SizedBox(height: 20),
                           ],
 
-                          // Contenu avec effet typewriter
-                          if (widget.note.content.isNotEmpty) ...[
-                            RichText(
-                              text: TextSpan(
-                                children: [
-                                  TextSpan(
-                                    text: _displayedContent,
-                                    style: TextStyle(
-                                      fontSize: 16,
-                                      color: textColor.withOpacity(0.85),
-                                      height: 1.8,
-                                      fontFamily: 'Georgia',
-                                    ),
-                                  ),
-                                  if (!_contentComplete && _titleComplete)
-                                    WidgetSpan(
-                                      child: _buildCursor(textColor),
-                                    ),
-                                ],
+                          // Contenu avec RichTextViewer
+                          if (widget.note.content.isNotEmpty &&
+                              _titleComplete) ...[
+                            RichTextViewer(
+                              content: widget.note.content,
+                              formattedContent: widget.note.formattedContent,
+                              skip: _storyFinished || _contentComplete,
+                              baseStyle: TextStyle(
+                                fontSize: 16,
+                                color: textColor.withOpacity(0.85),
+                                height: 1.8,
+                                fontFamily: 'Georgia',
                               ),
+                              onComplete: _finishStory,
                             ),
                           ],
 
@@ -267,7 +262,7 @@ class _NoteViewScreenState extends State<NoteViewScreen>
                           if (_waitingForTap)
                             _buildTapToContinue(textColor, isDark),
 
-                          // "Termine" - fin de l'histoire
+                          // "Termine" - fin de la story
                           if (_storyFinished) _buildFinished(textColor, isDark),
 
                           // Empty state
@@ -401,7 +396,7 @@ class _NoteViewScreenState extends State<NoteViewScreen>
               ),
               const SizedBox(height: 8),
               Text(
-                'Fin de la note.',
+                'Fin de la story.',
                 style: TextStyle(
                   fontSize: 14,
                   color: textColor.withOpacity(0.5),
@@ -468,7 +463,7 @@ class _NoteViewScreenState extends State<NoteViewScreen>
                 size: 64, color: textColor.withOpacity(0.25)),
             const SizedBox(height: 16),
             Text(
-              'Note vide',
+              'Story vide',
               style: TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.w600,
@@ -482,7 +477,7 @@ class _NoteViewScreenState extends State<NoteViewScreen>
 
   Widget _buildAppBar(BuildContext context, Color textColor, bool isDark) {
     final isSignedIn = AuthService.instance.isSignedIn;
-    
+
     return Container(
       padding: const EdgeInsets.fromLTRB(8, 8, 16, 8),
       child: Row(
@@ -494,8 +489,8 @@ class _NoteViewScreenState extends State<NoteViewScreen>
           const Spacer(),
           // Bouton partager (seulement si connecté)
           if (isSignedIn) ...[
-            _buildToolButton(
-                Icons.share_outlined, textColor, () => _showShareDialog(), isDark),
+            _buildToolButton(Icons.share_outlined, textColor,
+                () => _showShareDialog(), isDark),
             const SizedBox(width: 4),
           ],
           _buildToolButton(
@@ -509,14 +504,17 @@ class _NoteViewScreenState extends State<NoteViewScreen>
                 ? Icons.favorite_rounded
                 : Icons.favorite_border_rounded,
             widget.note.isFavorite ? AppTheme.skyBlue : textColor,
-            widget.onToggleFavorite,
+            () {
+              widget.onToggleFavorite();
+              if (mounted) setState(() {});
+            },
             isDark,
           ),
         ],
       ),
     );
   }
-  
+
   void _showShareDialog() {
     Navigator.push(
       context,
@@ -604,7 +602,7 @@ class _NoteViewScreenState extends State<NoteViewScreen>
       context: context,
       builder: (_) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text('Supprimer cette note ?',
+        title: const Text('Supprimer cette story ?',
             style: TextStyle(fontWeight: FontWeight.w700)),
         content: const Text('Cette action est irreversible.'),
         actions: [

@@ -5,9 +5,10 @@ import '../services/auth_service.dart';
 import '../services/image_base64_service.dart';
 import '../theme/app_theme.dart';
 import '../utils/date_formatter.dart';
+import '../widgets/user_avatar.dart';
 import 'shared_note_view_screen.dart';
 
-/// Écran listant les notes partagées (reçues et envoyées)
+/// Écran listant les stories partagées (reçues et envoyées)
 class SharedNotesScreen extends StatefulWidget {
   const SharedNotesScreen({super.key});
 
@@ -41,122 +42,202 @@ class _SharedNotesScreenState extends State<SharedNotesScreen>
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
     final primaryColor = AppTheme.skyBlue;
+    final bgColor = isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC);
+    final surfaceColor = isDark ? Colors.white.withOpacity(0.05) : Colors.black.withOpacity(0.03);
 
     if (!AuthService.instance.isSignedIn) {
       return Scaffold(
-        appBar: AppBar(title: const Text('Notes partagées')),
+        backgroundColor: bgColor,
         body: _buildLoggedOutState(isDark),
       );
     }
 
     return Scaffold(
-      appBar: AppBar(
-        title: Text(
-          _isSelectionMode ? '${_selectedNoteIds.length} sélectionnés' : 'Notes partagées',
-          style: const TextStyle(fontWeight: FontWeight.w900),
-        ),
-        centerTitle: true,
-        elevation: 0,
-        leading: _isSelectionMode
-            ? IconButton(
-                icon: const Icon(Icons.close_rounded),
-                onPressed: _exitSelectionMode,
-              )
-            : null,
-        actions: [
-          if (_isSelectionMode)
-            _isDeleting
-                ? const Center(
-                    child: Padding(
-                      padding: EdgeInsets.only(right: 16),
-                      child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)),
-                    ),
-                  )
-                : Padding(
-                    padding: const EdgeInsets.only(right: 12),
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: Colors.redAccent.withOpacity(0.15),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: IconButton(
-                        icon: const Icon(Icons.delete_sweep_rounded, color: Colors.redAccent),
-                        onPressed: _selectedNoteIds.isEmpty ? null : _deleteSelectedNotes,
-                        tooltip: 'Supprimer la selection',
-                      ),
-                    ),
-                  ),
-        ],
-      ),
-      body: Column(
+      backgroundColor: bgColor,
+      body: Stack(
         children: [
-          const SizedBox(height: 16),
-          // CUSTOM PILL TAB SWITCHER
-          Container(
-            margin: const EdgeInsets.symmetric(horizontal: 24),
-            padding: const EdgeInsets.all(6),
-            decoration: BoxDecoration(
-              color: isDark
-                  ? Colors.white.withOpacity(0.05)
-                  : Colors.black.withOpacity(0.05),
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: TabBar(
-              controller: _tabController,
-              indicator: BoxDecoration(
-                color: primaryColor,
-                borderRadius: BorderRadius.circular(16),
-                boxShadow: [
-                  BoxShadow(
-                    color: primaryColor.withOpacity(0.3),
-                    blurRadius: 8,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
+          // BACKGROUND DECORATION
+          Positioned(
+            top: -100,
+            right: -50,
+            child: Container(
+              width: 300,
+              height: 300,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: RadialGradient(
+                  colors: [
+                    primaryColor.withOpacity(isDark ? 0.12 : 0.08),
+                    primaryColor.withOpacity(0),
+                  ],
+                ),
               ),
-              indicatorSize: TabBarIndicatorSize.tab,
-              labelColor: Colors.white,
-              unselectedLabelColor: isDark ? Colors.white38 : Colors.black45,
-              labelStyle:
-                  const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
-              tabs: const [
-                Tab(
-                  height: 38,
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(Icons.inbox_rounded, size: 16),
-                      SizedBox(width: 8),
-                      Text('Reçues'),
-                    ],
-                  ),
-                ),
-                Tab(
-                  height: 38,
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(Icons.send_rounded, size: 16),
-                      SizedBox(width: 8),
-                      Text('Envoyées'),
-                    ],
-                  ),
-                ),
-              ],
             ),
           ),
-          const SizedBox(height: 16),
-          Expanded(
-            child: TabBarView(
-              controller: _tabController,
+          Positioned(
+            bottom: 100,
+            left: -100,
+            child: Container(
+              width: 400,
+              height: 400,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: RadialGradient(
+                  colors: [
+                    Colors.purple.withOpacity(isDark ? 0.08 : 0.05),
+                    Colors.purple.withOpacity(0),
+                  ],
+                ),
+              ),
+            ),
+          ),
+
+          SafeArea(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _buildStreamList(_receivedNotesStream, true, isDark),
-                _buildStreamList(_sentNotesStream, false, isDark),
+                // CUSTOM HEADER
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(24, 20, 24, 8),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Partages',
+                              style: TextStyle(
+                                fontSize: 34,
+                                fontWeight: FontWeight.w900,
+                                color: isDark ? Colors.white : const Color(0xFF1E293B),
+                                letterSpacing: -1,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            StreamBuilder<int>(
+                              stream: SharingService.instance.watchUnreadReceivedNotesCount(),
+                              builder: (context, snapshot) {
+                                final count = snapshot.data ?? 0;
+                                return Text(
+                                  count > 0 ? '$count nouvelles stories' : 'Vos échanges cryptés',
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w500,
+                                    color: count > 0 ? primaryColor : (isDark ? Colors.white38 : Colors.black38),
+                                  ),
+                                );
+                              }
+                            ),
+                          ],
+                        ),
+                      ),
+                      if (_isSelectionMode)
+                        _isDeleting
+                          ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2))
+                          : IconButton(
+                              icon: const Icon(Icons.delete_outline_rounded, color: Colors.redAccent),
+                              onPressed: _selectedNoteIds.isEmpty ? null : _deleteSelectedNotes,
+                            )
+                    ],
+                  ),
+                ),
+
+                const SizedBox(height: 16),
+
+                // GLASSMORPHIC TAB BAR
+                Container(
+                  margin: const EdgeInsets.symmetric(horizontal: 24),
+                  height: 48,
+                  decoration: BoxDecoration(
+                    color: surfaceColor,
+                    borderRadius: BorderRadius.circular(24),
+                    border: Border.all(
+                      color: isDark ? Colors.white.withOpacity(0.05) : Colors.black.withOpacity(0.02),
+                    ),
+                  ),
+                  child: TabBar(
+                    controller: _tabController,
+                    indicatorSize: TabBarIndicatorSize.tab,
+                    dividerColor: Colors.transparent,
+                    indicator: BoxDecoration(
+                      color: isDark ? Colors.white.withOpacity(0.1) : Colors.white,
+                      borderRadius: BorderRadius.circular(22),
+                      boxShadow: [
+                        if (!isDark)
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.05),
+                            blurRadius: 10,
+                            offset: const Offset(0, 4),
+                          ),
+                      ],
+                    ),
+                    labelColor: isDark ? Colors.white : const Color(0xFF1E293B),
+                    unselectedLabelColor: isDark ? Colors.white38 : Colors.black45,
+                    labelStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+                    tabs: const [
+                      Tab(text: 'Reçues'),
+                      Tab(text: 'Envoyées'),
+                    ],
+                  ),
+                ),
+
+                const SizedBox(height: 12),
+
+                // CONTENT
+                Expanded(
+                  child: TabBarView(
+                    controller: _tabController,
+                    children: [
+                      _buildStreamList(_receivedNotesStream, true, isDark),
+                      _buildStreamList(_sentNotesStream, false, isDark),
+                    ],
+                  ),
+                ),
               ],
             ),
           ),
+          
+          // Selection Mode Close Button
+          if (_isSelectionMode)
+            Positioned(
+              bottom: 30,
+              left: 0,
+              right: 0,
+              child: Center(
+                child: GestureDetector(
+                  onTap: _exitSelectionMode,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF1E293B),
+                      borderRadius: BorderRadius.circular(30),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.3),
+                          blurRadius: 20,
+                          offset: const Offset(0, 10),
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.close_rounded, color: Colors.white, size: 18),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Quitter la sélection (${_selectedNoteIds.length})',
+                          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
         ],
       ),
     );
@@ -178,21 +259,37 @@ class _SharedNotesScreenState extends State<SharedNotesScreen>
 
   Widget _buildLoggedOutState(bool isDark) {
     return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(Icons.lock_person_rounded,
-              size: 80,
-              color: isDark ? Colors.white10 : Colors.black.withOpacity(0.1)),
-          const SizedBox(height: 24),
-          const Text('Accès Restreint',
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-          const SizedBox(height: 8),
-          Text(
-            'Connectez-vous pour débloquer le partage',
-            style: TextStyle(color: isDark ? Colors.white38 : Colors.black38),
-          ),
-        ],
+      child: Padding(
+        padding: const EdgeInsets.all(40),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              width: 120,
+              height: 120,
+              decoration: BoxDecoration(
+                color: isDark ? Colors.white.withOpacity(0.05) : Colors.black.withOpacity(0.03),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(Icons.lock_person_rounded,
+                  size: 48,
+                  color: isDark ? Colors.white24 : Colors.black12),
+            ),
+            const SizedBox(height: 32),
+            const Text('Espace Privé',
+                style: TextStyle(fontSize: 24, fontWeight: FontWeight.w900)),
+            const SizedBox(height: 12),
+            Text(
+              'Identifiez-vous pour accéder à vos échanges de stories et partager vos moments.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 16,
+                color: isDark ? Colors.white38 : Colors.black45,
+                height: 1.5,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -204,7 +301,8 @@ class _SharedNotesScreenState extends State<SharedNotesScreen>
     }
 
     return ListView.builder(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 80),
+      physics: const BouncingScrollPhysics(),
       itemCount: notes.length,
       itemBuilder: (context, index) {
         final note = notes[index];
@@ -217,205 +315,192 @@ class _SharedNotesScreenState extends State<SharedNotesScreen>
 
   Widget _buildEmptyState(bool isReceived, bool isDark) {
     return Center(
-      child: Opacity(
-        opacity: 0.6,
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(32),
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: isDark
-                    ? Colors.white.withOpacity(0.03)
-                    : Colors.black.withOpacity(0.02),
-              ),
-              child: Icon(
-                isReceived
-                    ? Icons.auto_awesome_rounded
-                    : Icons.history_edu_rounded,
-                size: 64,
-                color: isDark ? Colors.white12 : Colors.black12,
-              ),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            isReceived ? Icons.auto_awesome_rounded : Icons.history_edu_rounded,
+            size: 64,
+            color: isDark ? Colors.white.withOpacity(0.05) : Colors.black.withOpacity(0.05),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            isReceived ? 'Aucune story reçue' : 'Partez à l\'aventure',
+            style: TextStyle(
+              fontSize: 18, 
+              fontWeight: FontWeight.w700,
+              color: isDark ? Colors.white24 : Colors.black26,
             ),
-            const SizedBox(height: 24),
-            Text(
-              isReceived
-                  ? 'Votre boîte est vide'
-                  : 'Aucun envoi pour le moment',
-              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              isReceived
-                  ? 'Les notes reçues brilleront ici'
-                  : 'Partagez votre première idée',
-              textAlign: TextAlign.center,
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
 
   Widget _buildNoteCard(SharedNote note,
       {required bool isReceived, required bool isDark, bool isSelected = false}) {
-    final noteColor = Color(note.color);
-    final textColor = _getTextColor(noteColor, isDark);
+    final isUnread = isReceived && !note.isRead;
 
-    return Container(
-      margin: const EdgeInsets.symmetric(vertical: 8),
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 200),
+      margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
-        color: noteColor,
-        borderRadius: BorderRadius.circular(28),
+        color: isDark ? Colors.white.withOpacity(0.05) : Colors.white,
+        borderRadius: BorderRadius.circular(24),
         border: Border.all(
-          color: isDark ? Colors.white.withOpacity(0.1) : Colors.black.withOpacity(0.05),
-          width: 1,
+          color: isSelected 
+              ? AppTheme.skyBlue 
+              : (isDark ? Colors.white.withOpacity(0.12) : Colors.black.withOpacity(0.08)),
+          width: isSelected ? 2 : 1,
         ),
         boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.08),
-            blurRadius: 12,
-            offset: const Offset(0, 4),
-          ),
+          if (!isDark)
+            BoxShadow(
+              color: Colors.black.withOpacity(0.05),
+              blurRadius: 25,
+              offset: const Offset(0, 10),
+            ),
         ],
       ),
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(28),
+        borderRadius: BorderRadius.circular(23),
         child: Material(
           color: Colors.transparent,
           child: InkWell(
             onTap: _isSelectionMode
                 ? () => _toggleNoteSelection(note.id)
-                : () => Navigator.push(
+                : () {
+                    if (isReceived && !note.isRead) {
+                      SharingService.instance.markAsRead(note.id);
+                    }
+                    Navigator.push(
                       context,
-                      MaterialPageRoute(
-                          builder: (context) =>
-                              SharedNoteViewScreen(sharedNote: note)),
-                    ),
-            onLongPress: () {
-              if (!_isSelectionMode) {
-                _enterSelectionMode(note.id);
-              }
-            },
+                      MaterialPageRoute(builder: (_) => SharedNoteViewScreen(sharedNote: note)),
+                    );
+                  },
+            onLongPress: () => _enterSelectionMode(note.id),
             child: Padding(
-              padding: const EdgeInsets.all(20),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+              padding: const EdgeInsets.all(16),
+              child: Row(
                 children: [
-                  Row(
+                  // ICON/AVATAR
+                  Stack(
                     children: [
-                      Container(
-                        width: 40,
-                        height: 40,
-                        decoration: BoxDecoration(
-                          color: textColor.withOpacity(0.12),
-                          shape: BoxShape.circle,
+                      _buildLeadingThumbnail(note, isReceived),
+                      if (isUnread)
+                        Positioned(
+                          right: 0,
+                          top: 0,
+                          child: Container(
+                            width: 12,
+                            height: 12,
+                            decoration: BoxDecoration(
+                              color: Colors.redAccent,
+                              shape: BoxShape.circle,
+                              border: Border.all(color: isDark ? const Color(0xFF1E293B) : Colors.white, width: 2),
+                            ),
+                          ),
                         ),
-                        child: Icon(
-                          isReceived ? Icons.person_rounded : Icons.alternate_email_rounded,
-                          size: 20,
-                          color: textColor.withOpacity(0.8),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+                    ],
+                  ),
+                  
+                  const SizedBox(width: 16),
+
+                  // CONTENT
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            Text(
-                              isReceived
-                                  ? note.senderName
-                                  : 'Pour : ${note.recipientName}',
-                              style: TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w800,
-                                color: textColor.withOpacity(0.9),
+                            Expanded(
+                              child: Text(
+                                isReceived ? note.senderName : 'À : ${note.recipientName}',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w700,
+                                  color: isDark ? Colors.white60 : Colors.black54,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
                               ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
                             ),
                             Text(
                               DateFormatter.formatRelativeDate(note.sharedAt),
                               style: TextStyle(
-                                  fontSize: 11,
-                                  color: textColor.withOpacity(0.5)),
+                                fontSize: 11,
+                                color: isDark ? Colors.white38 : Colors.black45,
+                              ),
                             ),
                           ],
                         ),
-                      ),
-                      if (note.reactions.isNotEmpty)
-                        _buildReactionBadge(note, textColor),
-                      if (_isSelectionMode) ...[
-                        const SizedBox(width: 8),
-                        Icon(
-                          isSelected ? Icons.check_circle_rounded : Icons.radio_button_off_rounded,
-                          color: isSelected ? textColor : textColor.withOpacity(0.3),
-                          size: 24,
+                        const SizedBox(height: 6),
+                        Text(
+                          note.title.isNotEmpty ? note.title : 'Sans titre',
+                          style: TextStyle(
+                            fontSize: 17,
+                            fontWeight: isUnread ? FontWeight.w900 : FontWeight.w700,
+                            color: isDark ? Colors.white : const Color(0xFF1E293B),
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
+                        if (note.content.isNotEmpty) ...[
+                          const SizedBox(height: 4),
+                          Text(
+                            note.content,
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: isDark ? Colors.white70 : const Color(0xFF475569),
+                              height: 1.3,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                        
+                        // Indicators
+                        if (note.reactions.isNotEmpty || note.imagesBase64.isNotEmpty) ...[
+                          const SizedBox(height: 12),
+                          Row(
+                            children: [
+                              if (note.imagesBase64.isNotEmpty) ...[
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: AppTheme.skyBlue.withOpacity(0.1),
+                                    borderRadius: BorderRadius.circular(6),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      Icon(Icons.image_rounded, size: 10, color: AppTheme.skyBlue),
+                                      const SizedBox(width: 4),
+                                      Text('${note.imagesBase64.length}', 
+                                          style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: AppTheme.skyBlue)),
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                              ],
+                              if (note.reactions.isNotEmpty)
+                                _buildCompactReactionBadge(note, isDark),
+                            ],
+                          ),
+                        ],
                       ],
-                    ],
+                    ),
                   ),
-                  const SizedBox(height: 18),
                   
-                  // CONTENT AREA WITH OPTIONAL IMAGE PREVIEW
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              note.title.isNotEmpty ? note.title : 'Sans titre',
-                              style: TextStyle(
-                                fontSize: 19,
-                                fontWeight: FontWeight.w900,
-                                color: note.title.isNotEmpty ? textColor : textColor.withOpacity(0.55),
-                                fontStyle: note.title.isNotEmpty ? FontStyle.normal : FontStyle.italic,
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                            const SizedBox(height: 6),
-                            Text(
-                              note.content.isNotEmpty 
-                                  ? note.content 
-                                  : (note.imagesBase64.isNotEmpty ? "[Note avec images]" : "Aucun contenu"),
-                              style: TextStyle(
-                                fontSize: 14,
-                                color: note.content.isNotEmpty ? textColor.withOpacity(0.7) : textColor.withOpacity(0.45),
-                                height: 1.5,
-                                fontStyle: note.content.isNotEmpty ? FontStyle.normal : FontStyle.italic,
-                              ),
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ],
-                        ),
+                  // TRAILER
+                  if (_isSelectionMode)
+                    Padding(
+                      padding: const EdgeInsets.only(left: 8),
+                      child: Icon(
+                        isSelected ? Icons.check_circle_rounded : Icons.radio_button_off_rounded,
+                        color: isSelected ? AppTheme.skyBlue : (isDark ? Colors.white10 : Colors.black12),
                       ),
-                      if (note.imagesBase64.isNotEmpty) ...[
-                        const SizedBox(width: 16),
-                        Container(
-                          width: 60,
-                          height: 60,
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(16),
-                            border: Border.all(color: textColor.withOpacity(0.1)),
-                          ),
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(15),
-                            child: ImageBase64Service.instance.decodeBase64ToImage(
-                              note.imagesBase64.first,
-                              fit: BoxFit.cover,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  _buildCardFooter(note, textColor),
+                    ),
                 ],
               ),
             ),
@@ -425,77 +510,63 @@ class _SharedNotesScreenState extends State<SharedNotesScreen>
     );
   }
 
-  Widget _buildReactionBadge(SharedNote note, Color textColor) {
+  Widget _buildLeadingThumbnail(SharedNote note, bool isReceived) {
+    if (note.imagesBase64.isNotEmpty) {
+      return Container(
+        width: 52,
+        height: 52,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+              color: Color(note.color).withOpacity(0.3),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(16),
+          child: ImageBase64Service.instance.decodeBase64ToImage(
+            note.imagesBase64.first,
+            fit: BoxFit.cover,
+          ),
+        ),
+      );
+    }
+
+    return UserAvatar(
+      userId: isReceived ? note.senderId : note.recipientId,
+      displayName: isReceived ? note.senderName : (note.recipientName.isNotEmpty ? note.recipientName : 'User'),
+      radius: 26,
+      heroTag: 'avatar_list_${note.id}',
+    );
+  }
+
+  Widget _buildCompactReactionBadge(SharedNote note, bool isDark) {
+    final reaction = note.reactions.last;
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: textColor.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(14),
+        color: isDark ? Colors.white.withOpacity(0.05) : Colors.black.withOpacity(0.03),
+        borderRadius: BorderRadius.circular(12),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text(note.reactions.first.emoji,
-              style: const TextStyle(fontSize: 14)),
+          Text(reaction.emoji, style: const TextStyle(fontSize: 12)),
           if (note.reactions.length > 1) ...[
-            const SizedBox(width: 6),
-            Text(
-              '+${note.reactions.length - 1}',
-              style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w900,
-                  color: textColor.withOpacity(0.6)),
-            ),
+            const SizedBox(width: 4),
+            Text('+${note.reactions.length - 1}', 
+                style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: isDark ? Colors.white60 : Colors.black45)),
           ],
         ],
       ),
     );
   }
 
-  Widget _buildCardFooter(SharedNote note, Color textColor) {
-    return Row(
-      children: [
-        if (note.imagesBase64.isNotEmpty)
-          _buildPillIndicator(Icons.image_rounded,
-              note.imagesBase64.length.toString(), textColor),
-        if (note.reactions.any((r) => r.isComment)) ...[
-          const SizedBox(width: 12),
-          _buildPillIndicator(
-              Icons.chat_bubble_rounded,
-              note.reactions.where((r) => r.isComment).length.toString(),
-              textColor),
-        ],
-        const Spacer(),
-        Icon(Icons.arrow_forward_ios_rounded,
-            size: 12, color: textColor.withOpacity(0.3)),
-      ],
-    );
-  }
-
-  Widget _buildPillIndicator(IconData icon, String label, Color textColor) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      decoration: BoxDecoration(
-        color: textColor.withOpacity(0.05),
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: Row(
-        children: [
-          Icon(icon, size: 14, color: textColor.withOpacity(0.4)),
-          const SizedBox(width: 6),
-          Text(
-            label,
-            style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.bold,
-                color: textColor.withOpacity(0.4)),
-          ),
-        ],
-      ),
-    );
-  }
-
   void _enterSelectionMode(String noteId) {
+    if (_isSelectionMode) return;
     setState(() {
       _isSelectionMode = true;
       _selectedNoteIds.add(noteId);
@@ -513,9 +584,7 @@ class _SharedNotesScreenState extends State<SharedNotesScreen>
     setState(() {
       if (_selectedNoteIds.contains(noteId)) {
         _selectedNoteIds.remove(noteId);
-        if (_selectedNoteIds.isEmpty) {
-          _isSelectionMode = false;
-        }
+        if (_selectedNoteIds.isEmpty) _isSelectionMode = false;
       } else {
         _selectedNoteIds.add(noteId);
       }
@@ -527,14 +596,16 @@ class _SharedNotesScreenState extends State<SharedNotesScreen>
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Supprimer les notes'),
-        content: Text('Voulez-vous supprimer les $count notes sélectionnées ?'),
+        backgroundColor: Theme.of(context).cardColor,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text('Supprimer les stories', style: TextStyle(fontWeight: FontWeight.w900)),
+        content: Text('Voulez-vous supprimer les $count stories sélectionnées ?'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Annuler')),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
-            style: TextButton.styleFrom(foregroundColor: Colors.red),
-            child: const Text('Supprimer'),
+            style: TextButton.styleFrom(foregroundColor: Colors.redAccent),
+            child: const Text('Supprimer', style: TextStyle(fontWeight: FontWeight.bold)),
           ),
         ],
       ),
@@ -549,24 +620,20 @@ class _SharedNotesScreenState extends State<SharedNotesScreen>
         if (mounted) {
           _exitSelectionMode();
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('$count notes supprimées avec succès')),
+            SnackBar(
+              content: Text('$count stories supprimées'),
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
           );
         }
       } catch (e) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Erreur lors de la suppression: $e')),
-          );
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erreur: $e')));
         }
       } finally {
         if (mounted) setState(() => _isDeleting = false);
       }
     }
-  }
-
-  Color _getTextColor(Color bg, bool isDark) {
-    // Si la couleur est trop claire, texte noir, sinon texte blanc
-    // On ignore isDark car c'est la couleur de la CARTE qui dicte le contraste
-    return bg.computeLuminance() > 0.6 ? Colors.black87 : Colors.white;
   }
 }

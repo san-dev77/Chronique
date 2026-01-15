@@ -9,6 +9,8 @@ import '../theme/app_theme.dart';
 import '../utils/page_transitions.dart';
 import 'note_view_screen.dart';
 import 'note_edit_screen.dart';
+import '../widgets/user_avatar.dart';
+import '../services/auth_service.dart';
 
 class MemoriesScreen extends StatefulWidget {
   const MemoriesScreen({super.key});
@@ -93,7 +95,7 @@ class _MemoriesScreenState extends State<MemoriesScreen> {
       if (randomSelection.isNotEmpty) {
         collections.add(MemoryCollection(
           title: 'Redécouvrez',
-          subtitle: 'Notes oubliées',
+          subtitle: 'Stories oubliées',
           notes: randomSelection,
           icon: Icons.auto_awesome_rounded,
           color: AppTheme.skyBlue,
@@ -147,7 +149,7 @@ class _MemoriesScreenState extends State<MemoriesScreen> {
       final selected = _selectRandomNotes(topLongNotes, 5);
       collections.add(MemoryCollection(
         title: 'Vos moments intenses',
-        subtitle: 'Notes les plus riches',
+        subtitle: 'Stories les plus riches',
         notes: selected,
         icon: Icons.local_fire_department_rounded,
         color: AppTheme.skyBlue,
@@ -167,8 +169,8 @@ class _MemoriesScreenState extends State<MemoriesScreen> {
       final selected = _selectRandomNotes(randomMonth.value, 5);
       if (selected.isNotEmpty) {
         collections.add(MemoryCollection(
-          title: _getMonthName(month),
-          subtitle: '$year',
+          title: 'En ${_getMonthName(month)} $year',
+          subtitle: 'Un mois au hasard',
           notes: selected,
           icon: Icons.event_note_rounded,
           color: AppTheme.skyBlue,
@@ -176,38 +178,39 @@ class _MemoriesScreenState extends State<MemoriesScreen> {
       }
     }
 
-    // 8. Il y a deux semaines
-    final twoWeeksAgoNotes = notes.where((n) {
-      final diff = now.difference(n.createdAt).inDays;
-      return diff >= 12 && diff <= 16;
-    }).toList();
-    if (twoWeeksAgoNotes.isNotEmpty) {
-      final selected = _selectRandomNotes(twoWeeksAgoNotes, 5);
-      collections.insert(
-          0,
-          MemoryCollection(
-            title: 'Il y a deux semaines',
-            subtitle: 'Souvenirs recents',
-            notes: selected,
-            icon: Icons.schedule_rounded,
-            color: AppTheme.skyBlue,
-          ));
-    }
-
-    // 9. Il y a trois mois
-    final threeMonthsAgoNotes = notes.where((n) {
-      final diff = now.difference(n.createdAt).inDays;
-      return diff >= 85 && diff <= 95;
-    }).toList();
-    if (threeMonthsAgoNotes.isNotEmpty) {
-      final selected = _selectRandomNotes(threeMonthsAgoNotes, 5);
+    // 8. Moment Surprise (Totalement aléatoire)
+    if (notes.length > 5) {
+      final randomNotes = _selectRandomNotes(notes, 4);
       collections.add(MemoryCollection(
-        title: 'Il y a trois mois',
-        subtitle: 'Un trimestre deja',
-        notes: selected,
-        icon: Icons.calendar_month_rounded,
+        title: 'Moment Surprise',
+        subtitle: 'Une note au hasard pour vous',
+        notes: randomNotes,
+        icon: Icons.auto_awesome_rounded,
         color: AppTheme.skyBlue,
       ));
+    }
+
+    // 9. Par couleur
+    final colorsInNotes = notes.map((n) => n.color).toSet().toList();
+    if (colorsInNotes.isNotEmpty) {
+      final randomColor = colorsInNotes[_random.nextInt(colorsInNotes.length)];
+      final filteredByColor = notes.where((n) => n.color == randomColor).toList();
+      if (filteredByColor.length >= 2) {
+        collections.add(MemoryCollection(
+          title: 'Thème de Couleur',
+          subtitle: 'Stories coordonnées',
+          notes: _selectRandomNotes(filteredByColor, 5),
+          icon: Icons.palette_rounded,
+          color: randomColor,
+        ));
+      }
+    }
+
+    // Mélanger un peu l'ordre des collections pour la variété (sauf la première si elle existe)
+    if (collections.length > 3) {
+      final first = collections.removeAt(0);
+      collections.shuffle(_random);
+      collections.insert(0, first);
     }
 
     return collections;
@@ -368,18 +371,28 @@ class _MemoriesScreenState extends State<MemoriesScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  'Souvenirs',
-                  style: TextStyle(
-                    fontSize: 28,
-                    fontWeight: FontWeight.w800,
-                    color: isDark ? AppTheme.textLight : AppTheme.textDark,
-                    letterSpacing: -0.5,
-                  ),
+                Row(
+                  children: [
+                    Text(
+                      'Souvenirs',
+                      style: TextStyle(
+                        fontSize: 28,
+                        fontWeight: FontWeight.w800,
+                        color: isDark ? AppTheme.textLight : AppTheme.textDark,
+                        letterSpacing: -0.5,
+                      ),
+                    ),
+                    const Spacer(),
+                    UserAvatar(
+                      displayName: AuthService.instance.userName ?? '?',
+                      userId: AuthService.instance.userId,
+                      radius: 20,
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'Redécouvrez vos notes',
+                  'Redécouvrez vos stories',
                   style: TextStyle(
                     fontSize: 14,
                     color: isDark ? AppTheme.textMutedDark : AppTheme.textMuted,
@@ -432,7 +445,7 @@ class _MemoriesScreenState extends State<MemoriesScreen> {
             ),
             const SizedBox(height: 8),
             Text(
-              'Créez des notes pour générer des souvenirs',
+              'Créez des stories pour générer des souvenirs',
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontSize: 15,
@@ -839,10 +852,20 @@ class _SlideshowScreenState extends State<_SlideshowScreen>
       if (_isPlaying) {
         _startAutoPlay();
       } else {
-        _autoPlayTimer?.cancel();
-        _progressController.stop();
+        _pauseAutoPlay();
       }
     });
+  }
+
+  void _pauseAutoPlay() {
+    _autoPlayTimer?.cancel();
+    _progressController.stop();
+  }
+
+  void _resumeAutoPlay() {
+    if (_isPlaying && mounted) {
+      _startAutoPlay();
+    }
   }
 
   @override
@@ -853,18 +876,23 @@ class _SlideshowScreenState extends State<_SlideshowScreen>
       backgroundColor: Colors.black,
       body: Stack(
         children: [
-          // PageView plein écran
-          PageView.builder(
-            controller: _pageController,
-            onPageChanged: (page) {
-              setState(() => _currentPage = page);
-              if (_isPlaying) {
-                _progressController.forward(from: 0);
-              }
-            },
-            itemCount: widget.collection.notes.length,
-            itemBuilder: (context, index) =>
-                _buildSlide(widget.collection.notes[index]),
+          // PageView plein écran avec Hold to Pause
+          GestureDetector(
+            onLongPressStart: (_) => _pauseAutoPlay(),
+            onLongPressEnd: (_) => _resumeAutoPlay(),
+            onLongPressCancel: () => _resumeAutoPlay(),
+            child: PageView.builder(
+              controller: _pageController,
+              onPageChanged: (page) {
+                setState(() => _currentPage = page);
+                if (_isPlaying) {
+                  _progressController.forward(from: 0);
+                }
+              },
+              itemCount: widget.collection.notes.length,
+              itemBuilder: (context, index) =>
+                  _buildSlide(widget.collection.notes[index]),
+            ),
           ),
 
           // Barre de progression en haut

@@ -14,12 +14,16 @@ class AppMember {
   final String email;
   final String displayName;
   final String? photoUrl;
+  final String? photoBase64;
+  final int? profileColor;
 
   AppMember({
     required this.uid,
     required this.email,
     required this.displayName,
     this.photoUrl,
+    this.photoBase64,
+    this.profileColor,
   });
 
   factory AppMember.fromFirestore(DocumentSnapshot doc) {
@@ -29,6 +33,8 @@ class AppMember {
       email: data['email'] ?? '',
       displayName: data['displayName'] ?? data['email'] ?? 'Utilisateur',
       photoUrl: data['photoURL'],
+      photoBase64: data['photoBase64'],
+      profileColor: data['profileColor'],
     );
   }
 }
@@ -80,22 +86,56 @@ class SharingService {
   }
 
   /// Enregistre l'utilisateur actuel dans la collection users (à appeler à la connexion)
-  Future<void> registerCurrentUser({String? name}) async {
+  Future<void> registerCurrentUser({
+    String? name,
+    String? photoBase64,
+    int? profileColor,
+  }) async {
     final currentUser = AuthService.instance.currentUser;
     if (currentUser == null) return;
 
     final displayName = name ?? currentUser.displayName ?? 'Utilisateur';
 
     try {
-      await _usersCollection.doc(currentUser.uid).set({
+      final data = {
         'email': currentUser.email?.toLowerCase(),
         'displayName': displayName,
         'photoURL': currentUser.photoURL,
         'lastSeen': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
+      };
+
+      if (photoBase64 != null) {
+        data['photoBase64'] = photoBase64;
+      }
+      
+      if (profileColor != null) {
+        data['profileColor'] = profileColor;
+      }
+
+      await _usersCollection.doc(currentUser.uid).set(data, SetOptions(merge: true));
       debugPrint('Firestore: Profil utilisateur enregistre ($displayName)');
     } catch (e) {
       debugPrint('Erreur enregistrement utilisateur: $e');
+    }
+  }
+
+  /// Met à jour les éléments de profil spécifiques (Image Base64 ou Couleur)
+  Future<void> updateProfileData({String? photoBase64, int? profileColor}) async {
+    final currentUser = AuthService.instance.currentUser;
+    if (currentUser == null) return;
+
+    try {
+      final Map<String, dynamic> data = {};
+      if (photoBase64 != null) data['photoBase64'] = photoBase64;
+      if (profileColor != null) data['profileColor'] = profileColor;
+      
+      if (data.isNotEmpty) {
+        await _usersCollection.doc(currentUser.uid).update(data);
+        debugPrint('Firestore: Profil mis à jour (${data.keys.join(", ")})');
+      }
+    } catch (e) {
+      debugPrint('Erreur updateProfileData: $e');
+      rethrow;
     }
   }
 
@@ -127,10 +167,12 @@ class SharingService {
       recipientName: member.displayName,
       title: note.title,
       content: note.content,
+      formattedContent: note.formattedContent,
       imagesBase64: imagesBase64,
       color: note.color.value,
       sharedAt: DateTime.now(),
       reactions: [],
+      isRead: false,
     );
 
     // Sauvegarder dans Firestore
@@ -141,8 +183,8 @@ class SharingService {
       recipientId: member.uid,
       type: NotificationType.share,
       sharedNoteId: sharedNoteId,
-      title: 'Nouvelle note reçue',
-      body: '${currentUser.displayName ?? "Quelqu'un"} vous a partagé une note : ${note.title}',
+      title: 'Nouvelle story reçue',
+      body: '${currentUser.displayName ?? "Quelqu'un"} vous a partagé une story : ${note.title}',
     );
 
     return sharedNote;
@@ -189,10 +231,12 @@ class SharingService {
       recipientName: recipientName,
       title: note.title,
       content: note.content,
+      formattedContent: note.formattedContent,
       imagesBase64: imagesBase64,
       color: note.color.value,
       sharedAt: DateTime.now(),
       reactions: [],
+      isRead: false,
     );
 
     await _sharedNotesCollection.doc(sharedNoteId).set(sharedNote.toJson());
@@ -203,8 +247,8 @@ class SharingService {
         recipientId: recipientId,
         type: NotificationType.share,
         sharedNoteId: sharedNoteId,
-        title: 'Nouvelle note reçue',
-        body: '${currentUser.displayName ?? "Quelqu'un"} vous a partagé une note : ${note.title}',
+        title: 'Nouvelle story reçue',
+        body: '${currentUser.displayName ?? "Quelqu'un"} vous a partagé une story : ${note.title}',
       );
     }
 
@@ -308,6 +352,35 @@ class SharingService {
     });
   }
 
+  /// Stream du nombre de notes non lues reçues
+  Stream<int> watchUnreadReceivedNotesCount() {
+    final currentUser = AuthService.instance.currentUser;
+    if (currentUser == null) return Stream.value(0);
+
+    return _sharedNotesCollection
+        .where('recipientEmail', isEqualTo: currentUser.email?.toLowerCase())
+        .snapshots()
+        .map((snapshot) {
+          int count = 0;
+          for (var doc in snapshot.docs) {
+            final data = doc.data() as Map<String, dynamic>;
+            final isRead = data['isRead'] ?? true; 
+            if (!isRead) count++;
+          }
+          return count;
+    });
+  }
+
+  /// Marque une note partagée comme lue
+  Future<void> markAsRead(String sharedNoteId) async {
+    try {
+      await _sharedNotesCollection.doc(sharedNoteId).update({'isRead': true});
+      debugPrint('Note $sharedNoteId marquée comme lue');
+    } catch (e) {
+      debugPrint('Erreur markAsRead: $e');
+    }
+  }
+
   // ============================================================
   // RÉACTIONS ET COMMENTAIRES
   // ============================================================
@@ -343,7 +416,7 @@ class SharingService {
         type: NotificationType.reaction,
         sharedNoteId: sharedNoteId,
         title: 'Nouvelle reaction',
-        body: '$senderName a réagi $emoji à votre note',
+        body: '$senderName a réagi $emoji à votre story',
       );
     }
   }

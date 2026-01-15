@@ -4,6 +4,7 @@ class Note {
   String id;
   String title;
   String content;
+  String? formattedContent; // JSON du contenu formaté (rich text)
   DateTime createdAt;
   DateTime modifiedAt;
   List<String> imagePaths;
@@ -14,6 +15,7 @@ class Note {
     required this.id,
     required this.title,
     required this.content,
+    this.formattedContent,
     required this.createdAt,
     required this.modifiedAt,
     this.imagePaths = const [],
@@ -26,6 +28,7 @@ class Note {
       'id': id,
       'title': title,
       'content': content,
+      'formattedContent': formattedContent,
       'createdAt': createdAt.toIso8601String(),
       'modifiedAt': modifiedAt.toIso8601String(),
       'imagePaths': imagePaths,
@@ -39,6 +42,7 @@ class Note {
       id: json['id'],
       title: json['title'],
       content: json['content'],
+      formattedContent: json['formattedContent'],
       createdAt: DateTime.parse(json['createdAt']),
       modifiedAt: DateTime.parse(json['modifiedAt']),
       imagePaths: List<String>.from(json['imagePaths'] ?? []),
@@ -51,6 +55,7 @@ class Note {
     String? id,
     String? title,
     String? content,
+    String? formattedContent,
     DateTime? createdAt,
     DateTime? modifiedAt,
     List<String>? imagePaths,
@@ -61,6 +66,7 @@ class Note {
       id: id ?? this.id,
       title: title ?? this.title,
       content: content ?? this.content,
+      formattedContent: formattedContent ?? this.formattedContent,
       createdAt: createdAt ?? this.createdAt,
       modifiedAt: modifiedAt ?? this.modifiedAt,
       imagePaths: imagePaths ?? this.imagePaths,

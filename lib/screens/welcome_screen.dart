@@ -86,12 +86,21 @@ class _WelcomeScreenState extends State<WelcomeScreen>
 
                     // Titre
                     const Text(
-                      'Note Box',
+                      'Chroniques',
                       style: TextStyle(
-                        fontSize: 40,
+                        fontSize: 36,
                         fontWeight: FontWeight.w900,
                         color: Color(0xFF1A1A1A),
-                        letterSpacing: -1,
+                        letterSpacing: -0.5,
+                      ),
+                    ),
+                    const Text(
+                      'The Story Box',
+                      style: TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.w300,
+                        color: Color(0xFF4A4A4A),
+                        letterSpacing: 1.5,
                       ),
                     ),
 
@@ -99,7 +108,7 @@ class _WelcomeScreenState extends State<WelcomeScreen>
 
                     // Description avec meilleur contraste
                     Text(
-                      'Capturez vos idées,\nsynchronisez-les partout',
+                      'Capturez vos souvenirs,\nracontez votre story',
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         fontSize: 17,
@@ -120,7 +129,7 @@ class _WelcomeScreenState extends State<WelcomeScreen>
                     const SizedBox(height: 12),
                     _buildFeature(
                       Icons.photo_library_rounded,
-                      'Ajoutez des images à vos notes',
+                      'Illustrez vos récits avec des images',
                       Colors.purple,
                     ),
                     const SizedBox(height: 12),
@@ -160,7 +169,7 @@ class _WelcomeScreenState extends State<WelcomeScreen>
                         color: Colors.transparent,
                         child: InkWell(
                           onTap: () {
-                            Navigator.push(
+                            Navigator.pushReplacement(
                               context,
                               MaterialPageRoute(
                                 builder: (context) => const AuthLoginScreen(),
@@ -199,7 +208,7 @@ class _WelcomeScreenState extends State<WelcomeScreen>
                       text: 'Créer un compte',
                       icon: Icons.person_add_rounded,
                       onPressed: () {
-                        Navigator.push(
+                        Navigator.pushReplacement(
                           context,
                           MaterialPageRoute(
                             builder: (context) => const AuthLoginScreen(initialIsSignUp: true),

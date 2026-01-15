@@ -76,8 +76,34 @@ class NoteCard extends StatelessWidget {
                         ),
               ],
 
+              // Bouton favori (Overlay)
+              if (onFavoriteToggle != null)
+                Positioned(
+                  top: 8,
+                  right: 8,
+                  child: Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      onTap: onFavoriteToggle,
+                      borderRadius: BorderRadius.circular(20),
+                      child: Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: (hasImage ? Colors.black : textColor).withOpacity(0.1),
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(
+                          note.isFavorite ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+                          color: note.isFavorite ? AppTheme.skyBlue : (hasImage ? Colors.white : textColor.withOpacity(0.6)),
+                          size: 20,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+
               // Contenu
-                      Padding(
+              Padding(
                 padding: const EdgeInsets.all(16),
                         child: Column(
                   mainAxisSize: MainAxisSize.min,

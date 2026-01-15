@@ -9,7 +9,10 @@ class NoteLogo extends StatelessWidget {
     super.key,
     this.size = 140,
     this.showShadow = true,
+    this.isRound = false,
   });
+
+  final bool isRound;
 
   @override
   Widget build(BuildContext context) {
@@ -17,7 +20,7 @@ class NoteLogo extends StatelessWidget {
       width: size,
       height: size,
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(size * 0.2),
+        borderRadius: BorderRadius.circular(isRound ? size / 2 : size * 0.2),
         boxShadow: showShadow
             ? [
                 BoxShadow(
@@ -29,7 +32,7 @@ class NoteLogo extends StatelessWidget {
             : null,
       ),
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(size * 0.2),
+        borderRadius: BorderRadius.circular(isRound ? size / 2 : size * 0.2),
         child: Image.asset(
           'assets/logo.png',
           width: size,

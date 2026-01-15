@@ -1,0 +1,2 @@
+[error] The argument type 'WidgetSpan' can't be assigned to the parameter type 'TextSpan'.  (c:\users\dell\onedrive\bureau\app\note_keeper\lib\widgets\rich_text_viewer.dart:154:20)
+[info] 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss (c:\users\dell\onedrive\bureau\app\note_keeper\lib\widgets\rich_text_viewer.dart:145:54)

@@ -15,6 +15,9 @@ class ImageBase64Service {
     return _instance!;
   }
 
+  /// Cache pour éviter de re-décoder les mêmes chaînes Base64 à chaque frame
+  final Map<String, Uint8List> _decodeCache = {};
+
   /// Encode une image depuis son chemin en Base64
   /// Retourne null si le fichier n'existe pas
   Future<String?> encodeImageToBase64(String imagePath) async {
@@ -68,6 +71,13 @@ class ImageBase64Service {
 
   /// Décode une chaîne Base64 en bytes pour affichage
   Uint8List? decodeBase64ToBytes(String base64String) {
+    if (base64String.isEmpty) return null;
+    
+    // Vérifier le cache
+    if (_decodeCache.containsKey(base64String)) {
+      return _decodeCache[base64String];
+    }
+
     try {
       // Retirer le préfixe data:image/xxx;base64, si présent
       String cleanBase64 = base64String;
@@ -75,7 +85,13 @@ class ImageBase64Service {
         cleanBase64 = base64String.split(',').last;
       }
       
-      return base64Decode(cleanBase64);
+      final bytes = base64Decode(cleanBase64.trim());
+      
+      // Mettre en cache (limiter la taille si nécessaire, mais ici on garde simple)
+      if (_decodeCache.length > 100) _decodeCache.clear(); // Flush si trop gros
+      _decodeCache[base64String] = bytes;
+      
+      return bytes;
     } catch (e) {
       print('Erreur décodage Base64: $e');
       return null;

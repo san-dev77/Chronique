@@ -12,10 +12,12 @@ class SharedNote {
   final String recipientName;
   final String title;
   final String content;
+  final String? formattedContent;
   final List<String> imagesBase64;
   final int color;
   final DateTime sharedAt;
   final List<Reaction> reactions;
+  final bool isRead;
 
   SharedNote({
     required this.id,
@@ -28,10 +30,12 @@ class SharedNote {
     required this.recipientName,
     required this.title,
     required this.content,
+    this.formattedContent,
     this.imagesBase64 = const [],
     required this.color,
     required this.sharedAt,
     this.reactions = const [],
+    this.isRead = false,
   });
 
   Map<String, dynamic> toJson() {
@@ -46,10 +50,12 @@ class SharedNote {
       'recipientName': recipientName,
       'title': title,
       'content': content,
+      'formattedContent': formattedContent,
       'imagesBase64': imagesBase64,
       'color': color,
       'sharedAt': sharedAt.toIso8601String(),
       'reactions': reactions.map((r) => r.toJson()).toList(),
+      'isRead': isRead,
     };
   }
 
@@ -65,6 +71,7 @@ class SharedNote {
       recipientName: json['recipientName'] ?? json['recipientEmail'] ?? 'Utilisateur',
       title: json['title'] ?? '',
       content: json['content'] ?? '',
+      formattedContent: json['formattedContent'],
       imagesBase64: List<String>.from(json['imagesBase64'] ?? []),
       color: json['color'] ?? 0xFFFFFFFF,
       sharedAt: json['sharedAt'] != null
@@ -74,6 +81,7 @@ class SharedNote {
               ?.map((r) => Reaction.fromJson(Map<String, dynamic>.from(r)))
               .toList() ??
           [],
+      isRead: json['isRead'] ?? true, // Default to true for existing notes
     );
   }
 
@@ -115,6 +123,7 @@ class SharedNote {
     int? color,
     DateTime? sharedAt,
     List<Reaction>? reactions,
+    bool? isRead,
   }) {
     return SharedNote(
       id: id ?? this.id,
@@ -127,10 +136,12 @@ class SharedNote {
       recipientName: recipientName ?? this.recipientName,
       title: title ?? this.title,
       content: content ?? this.content,
+      formattedContent: formattedContent ?? this.formattedContent,
       imagesBase64: imagesBase64 ?? this.imagesBase64,
       color: color ?? this.color,
       sharedAt: sharedAt ?? this.sharedAt,
       reactions: reactions ?? this.reactions,
+      isRead: isRead ?? this.isRead,
     );
   }
 }
