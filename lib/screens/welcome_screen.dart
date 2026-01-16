@@ -95,7 +95,7 @@ class _WelcomeScreenState extends State<WelcomeScreen>
                       ),
                     ),
                     const Text(
-                      'The Story Box',
+                      'The Chronique Box',
                       style: TextStyle(
                         fontSize: 22,
                         fontWeight: FontWeight.w300,
@@ -108,7 +108,7 @@ class _WelcomeScreenState extends State<WelcomeScreen>
 
                     // Description avec meilleur contraste
                     Text(
-                      'Capturez vos souvenirs,\nracontez votre story',
+                      'Capturez vos souvenirs,\nracontez votre chronique',
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         fontSize: 17,

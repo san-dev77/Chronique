@@ -13,6 +13,7 @@ import 'note_service.dart';
 
 /// Nom de la tâche de fond pour les souvenirs
 const String memoriesTaskName = 'notebox_memories_task';
+const String memoriesOneOffTaskName = 'notebox_memories_oneoff_task';
 const String memoriesTaskTag = 'memories';
 
 /// Callback exécuté en arrière-plan
@@ -45,19 +46,25 @@ void callbackDispatcher() {
         debugPrint('Worker: Firebase current user: $userId');
       }
 
-      if (task == memoriesTaskName || task == Workmanager.iOSBackgroundTask) {
-        // --- 1. POLLING STORIES (Fréquent : toutes les 15 min) ---
+      if (task == memoriesTaskName || task == memoriesOneOffTaskName || task == Workmanager.iOSBackgroundTask) {
+        // --- 1. POLLING CHRONIQUES (Fréquent : toutes les 15 min) ---
         // On vérifie toujours les notifications sociales si un utilisateur est connecté
         if (userId != null) {
-          debugPrint('Worker: Checking stories for $userId');
+          debugPrint('Worker: Checking chroniques for $userId');
           await _checkUnreadNotifications(userId);
         }
 
-        // --- 2. SOUVENIRS (Quotidien : 1x/jour à l'heure choisie) ---
-        // Le service MemoryNotificationService gère lui-même le verrou de 24h et l'heure
+        // --- 2. SOUVENIRS ---
         await NoteService.instance.initializeForUser(userId);
         await MemoryNotificationService.instance.init();
-        await MemoryNotificationService.instance.checkAndNotifyMemories();
+        
+        if (task == memoriesOneOffTaskName) {
+           debugPrint('Worker: Explicit one-off memory trigger');
+           await MemoryNotificationService.instance.checkAndNotifyMemories(force: true);
+        } else {
+           // Cycle classique
+           await MemoryNotificationService.instance.checkAndNotifyMemories();
+        }
         
         // Mettre à jour les logs système
         await prefs.setString('last_worker_run', now.toIso8601String());

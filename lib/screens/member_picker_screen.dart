@@ -5,7 +5,7 @@ import '../services/auth_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/user_avatar.dart';
 
-/// Écran de sélection Multiple de membres pour partager une story
+/// Écran de sélection Multiple de membres pour partager une chronique
 class MemberPickerScreen extends StatefulWidget {
   final Note note;
 
@@ -94,7 +94,7 @@ class _MemberPickerScreenState extends State<MemberPickerScreen> {
         Navigator.pop(context, true);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Story partagée avec $successCount membre(s) !'),
+            content: Text('Chronique partagée avec $successCount membre(s) !'),
             backgroundColor: AppTheme.skyBlue,
             behavior: SnackBarBehavior.floating,
           ),

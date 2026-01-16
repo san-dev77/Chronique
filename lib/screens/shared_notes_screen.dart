@@ -8,7 +8,7 @@ import '../utils/date_formatter.dart';
 import '../widgets/user_avatar.dart';
 import 'shared_note_view_screen.dart';
 
-/// Écran listant les stories partagées (reçues et envoyées)
+/// Écran listant les chroniques partagées (reçues et envoyées)
 class SharedNotesScreen extends StatefulWidget {
   const SharedNotesScreen({super.key});
 
@@ -123,7 +123,7 @@ class _SharedNotesScreenState extends State<SharedNotesScreen>
                               builder: (context, snapshot) {
                                 final count = snapshot.data ?? 0;
                                 return Text(
-                                  count > 0 ? '$count nouvelles stories' : 'Vos échanges cryptés',
+                                  count > 0 ? '$count nouvelles chroniques' : 'Vos échanges cryptés',
                                   style: TextStyle(
                                     fontSize: 14,
                                     fontWeight: FontWeight.w500,
@@ -280,7 +280,7 @@ class _SharedNotesScreenState extends State<SharedNotesScreen>
                 style: TextStyle(fontSize: 24, fontWeight: FontWeight.w900)),
             const SizedBox(height: 12),
             Text(
-              'Identifiez-vous pour accéder à vos échanges de stories et partager vos moments.',
+              'Identifiez-vous pour accéder à vos échanges de chroniques et partager vos moments.',
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontSize: 16,
@@ -325,7 +325,7 @@ class _SharedNotesScreenState extends State<SharedNotesScreen>
           ),
           const SizedBox(height: 16),
           Text(
-            isReceived ? 'Aucune story reçue' : 'Partez à l\'aventure',
+            isReceived ? 'Aucune chronique reçue' : 'Partez à l\'aventure',
             style: TextStyle(
               fontSize: 18, 
               fontWeight: FontWeight.w700,
@@ -598,8 +598,8 @@ class _SharedNotesScreenState extends State<SharedNotesScreen>
       builder: (context) => AlertDialog(
         backgroundColor: Theme.of(context).cardColor,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text('Supprimer les stories', style: TextStyle(fontWeight: FontWeight.w900)),
-        content: Text('Voulez-vous supprimer les $count stories sélectionnées ?'),
+        title: const Text('Supprimer les chroniques', style: TextStyle(fontWeight: FontWeight.w900)),
+        content: Text('Voulez-vous supprimer les $count chroniques sélectionnées ?'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Annuler')),
           TextButton(
@@ -621,7 +621,7 @@ class _SharedNotesScreenState extends State<SharedNotesScreen>
           _exitSelectionMode();
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('$count stories supprimées'),
+              content: Text('$count chroniques supprimées'),
               behavior: SnackBarBehavior.floating,
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
             ),

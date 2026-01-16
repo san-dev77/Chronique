@@ -9,12 +9,22 @@ import '../services/auth_service.dart';
 import '../services/cloud_sync_service.dart';
 import '../services/connectivity_service.dart';
 import '../services/accent_color_service.dart';
+import '../services/guidance_service.dart';
 import '../theme/app_theme.dart';
 import '../services/sharing_service.dart';
 import 'dart:async';
+import 'dart:math';
+import '../models/note.dart';
+import '../models/spark.dart';
+import '../services/note_service.dart';
+import '../services/spark_service.dart';
+import 'note_edit_screen.dart';
+import '../utils/page_transitions.dart';
 
 class MainScreen extends StatefulWidget {
   final int initialTab;
+  static _MainScreenState? of(BuildContext context) => 
+      context.findAncestorStateOfType<_MainScreenState>();
 
   const MainScreen({super.key, this.initialTab = 0});
 
@@ -25,7 +35,7 @@ class MainScreen extends StatefulWidget {
 enum SyncStatus { idle, syncing, success, offline, error }
 
 class _MainScreenState extends State<MainScreen> {
-  late int _currentIndex;
+  late int _currentIndex = 0;
   SyncStatus _syncStatus = SyncStatus.idle;
   bool _isConnected = true;
   StreamSubscription? _connectivitySub;
@@ -78,16 +88,15 @@ class _MainScreenState extends State<MainScreen> {
     final isSignedIn = AuthService.instance.isSignedIn;
 
     return PopScope(
-      canPop: false, 
+      canPop: false,
       onPopInvoked: (didPop) async {
         if (didPop) return;
-        
+
         if (_currentIndex != 0) {
           // Si on n'est pas sur le premier onglet, on y retourne
           setState(() => _currentIndex = 0);
-        } else {
-          // Si on est déjà sur Stories, on quitte l'app proprement
-          // Au lieu de retourner sur l'écran de bienvenue
+        } else if (_currentIndex == 0) {
+          // Si on est déjà sur Chroniques, on quitte l'app proprement
           await SystemChannels.platform.invokeMethod('SystemNavigator.pop');
         }
       },
@@ -104,7 +113,9 @@ class _MainScreenState extends State<MainScreen> {
                 child: _buildConnectionBanner(context),
               ),
             // Badge sync (Affiche seulement en cas d'erreur ou offline)
-            if (isSignedIn && (_syncStatus == SyncStatus.error || _syncStatus == SyncStatus.offline))
+            if (isSignedIn &&
+                (_syncStatus == SyncStatus.error ||
+                    _syncStatus == SyncStatus.offline))
               Positioned(
                 top: MediaQuery.of(context).padding.top + 10,
                 left: 16,
@@ -133,7 +144,7 @@ class _MainScreenState extends State<MainScreen> {
             children: [
               Container(
                 padding: const EdgeInsets.all(8),
-        decoration: BoxDecoration(
+                decoration: BoxDecoration(
                   color: Colors.white.withOpacity(0.25),
                   borderRadius: BorderRadius.circular(10),
                 ),
@@ -141,7 +152,7 @@ class _MainScreenState extends State<MainScreen> {
                     size: 20, color: Colors.white),
               ),
               const SizedBox(width: 14),
-              const Expanded(
+              Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
@@ -228,32 +239,32 @@ class _MainScreenState extends State<MainScreen> {
     String description;
     IconData statusIcon;
 
-      switch (_syncStatus) {
-        case SyncStatus.syncing:
+    switch (_syncStatus) {
+      case SyncStatus.syncing:
         title = 'Synchronisation en cours';
         description =
             'Vos notes sont en train d\'etre synchronisees avec le cloud. Patientez quelques instants.';
         statusIcon = Icons.sync_rounded;
-          break;
-        case SyncStatus.success:
+        break;
+      case SyncStatus.success:
         title = 'Synchronisation reussie';
         description =
             'Toutes vos notes sont a jour et sauvegardees dans le cloud. Vous pouvez y acceder depuis n\'importe quel appareil connecte a votre compte.';
         statusIcon = Icons.cloud_done_rounded;
-          break;
-        case SyncStatus.error:
+        break;
+      case SyncStatus.error:
         title = 'Erreur de synchronisation';
         description =
             'Une erreur est survenue lors de la synchronisation. Verifiez votre connexion internet et reessayez.';
         statusIcon = Icons.cloud_off_rounded;
-          break;
-        case SyncStatus.offline:
+        break;
+      case SyncStatus.offline:
         title = 'Mode hors ligne';
         description =
             'Vous n\'etes pas connecte a internet. Vos notes sont sauvegardees localement et seront synchronisees automatiquement des que vous serez en ligne.';
         statusIcon = Icons.cloud_off_rounded;
-          break;
-        default:
+        break;
+      default:
         title = 'En attente';
         description =
             'La synchronisation demarrera automatiquement lorsque vous serez connecte.';
@@ -313,7 +324,7 @@ class _MainScreenState extends State<MainScreen> {
                   const SizedBox(width: 10),
                   Expanded(
                     child: Text(
-                      'Connectez-vous pour synchroniser vos stories sur tous vos appareils.',
+                      'Connectez-vous pour synchroniser vos chroniques sur tous vos appareils.',
                       style: TextStyle(
                         fontSize: 12,
                         color: isDark ? Colors.white60 : Colors.grey.shade600,
@@ -367,48 +378,58 @@ class _MainScreenState extends State<MainScreen> {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: [
-              _buildNavItem(0, Icons.auto_stories_outlined, Icons.auto_stories_rounded,
-                  'Stories', isDark, accentColor),
-              
+              _buildNavItem(
+                  0,
+                  Icons.auto_stories_outlined,
+                  Icons.auto_stories_rounded,
+                  'Chroniques',
+                  isDark,
+                  accentColor),
+
               // BADGE WRAPPER FOR SHARE TAB
               StreamBuilder<int>(
-                stream: SharingService.instance.watchUnreadReceivedNotesCount(),
-                builder: (context, snapshot) {
-                  final count = snapshot.data ?? 0;
-                  return Stack(
-                    clipBehavior: Clip.none,
-                    children: [
-                      _buildNavItem(1, Icons.people_outline_rounded, Icons.people_rounded,
-                          'Partage', isDark, accentColor),
-                      if (count > 0)
-                        Positioned(
-                          top: 10,
-                          right: 10,
-                          child: Container(
-                            padding: const EdgeInsets.all(4),
-                            decoration: const BoxDecoration(
-                              color: Colors.redAccent,
-                              shape: BoxShape.circle,
-                            ),
-                            constraints: const BoxConstraints(
-                              minWidth: 16,
-                              minHeight: 16,
-                            ),
-                            child: Text(
-                              count > 9 ? '9+' : count.toString(),
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 10,
-                                fontWeight: FontWeight.bold,
+                  stream:
+                      SharingService.instance.watchUnreadReceivedNotesCount(),
+                  builder: (context, snapshot) {
+                    final count = snapshot.data ?? 0;
+                    return Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        _buildNavItem(
+                            1,
+                            Icons.people_outline_rounded,
+                            Icons.people_rounded,
+                            'Partage',
+                            isDark,
+                            accentColor),
+                        if (count > 0)
+                          Positioned(
+                            top: 10,
+                            right: 10,
+                            child: Container(
+                              padding: const EdgeInsets.all(4),
+                              decoration: const BoxDecoration(
+                                color: Colors.redAccent,
+                                shape: BoxShape.circle,
                               ),
-                              textAlign: TextAlign.center,
+                              constraints: const BoxConstraints(
+                                minWidth: 16,
+                                minHeight: 16,
+                              ),
+                              child: Text(
+                                count > 9 ? '9+' : count.toString(),
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                                textAlign: TextAlign.center,
+                              ),
                             ),
                           ),
-                        ),
-                    ],
-                  );
-                }
-              ),
+                      ],
+                    );
+                  }),
 
               _buildNavItem(2, Icons.auto_awesome_outlined,
                   Icons.auto_awesome_rounded, 'Souvenirs', isDark, accentColor),

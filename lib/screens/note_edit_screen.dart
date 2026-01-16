@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
@@ -9,6 +10,9 @@ import '../widgets/rich_text_controller.dart';
 import '../widgets/rich_text_field.dart';
 import '../services/image_storage_service.dart';
 import '../services/image_crop_service.dart';
+import '../services/spark_service.dart';
+import '../models/spark.dart';
+import '../utils/image_picker_helper.dart';
 import '../theme/app_theme.dart';
 
 class NoteEditScreen extends StatefulWidget {
@@ -37,6 +41,9 @@ class _NoteEditScreenState extends State<NoteEditScreen> {
   late int _initialColor;
   late bool _initialFavorite;
 
+  List<Spark> _availableSparks = [];
+  bool _showSparks = false;
+
   @override
   void initState() {
     super.initState();
@@ -53,7 +60,7 @@ class _NoteEditScreenState extends State<NoteEditScreen> {
     );
     _titleController = TextEditingController(text: _note.title);
     _contentController = RichTextEditingController(text: _note.content);
-    
+
     // Charger le contenu formaté s'il existe
     if (_note.formattedContent != null && _note.formattedContent!.isNotEmpty) {
       _contentController.setFormattedContent(
@@ -67,6 +74,18 @@ class _NoteEditScreenState extends State<NoteEditScreen> {
     _initialImages = List.from(widget.note.imagePaths);
     _initialColor = widget.note.color.value;
     _initialFavorite = widget.note.isFavorite;
+
+    // Charger les étincelles pour suggestions
+    _loadSparks();
+  }
+
+  void _loadSparks() {
+    final sparks = SparkService.instance.getAllSparks();
+    setState(() {
+      _availableSparks = sparks;
+      // Afficher seulement si la note est neuve (pas de titre, pas de contenu)
+      _showSparks = widget.note.title.isEmpty && widget.note.content.isEmpty;
+    });
   }
 
   @override
@@ -82,7 +101,7 @@ class _NoteEditScreenState extends State<NoteEditScreen> {
     final currentTitle = _titleController.text.trim();
     final currentContent = _contentController.text.trim();
 
-    // Verifier si le contenu est vide (nouvelle story sans contenu)
+    // Verifier si le contenu est vide (nouvelle chronique sans contenu)
     if (currentTitle.isEmpty &&
         currentContent.isEmpty &&
         _note.imagePaths.isEmpty) {
@@ -191,7 +210,7 @@ class _NoteEditScreenState extends State<NoteEditScreen> {
     // On ne trim() pas le content ici pour garder la cohérence avec les spans du RichText
     // Le RichTextEditingController gère déjà son propre état
     final formatted = _contentController.getFormattedContent();
-    _note.content = _contentController.text; 
+    _note.content = _contentController.text;
     _note.formattedContent = formatted.toJsonString();
     _note.modifiedAt = DateTime.now();
     widget.onSave(_note);
@@ -201,22 +220,16 @@ class _NoteEditScreenState extends State<NoteEditScreen> {
   Future<void> _pickImage() async {
     setState(() => _isSaving = true);
     try {
-      final image = await _imagePicker.pickImage(
-        source: ImageSource.gallery,
-        maxWidth: 1920,
-        maxHeight: 1920,
-        imageQuality: 85,
-      );
-      if (image != null) {
-        // Proposer le recadrage
-        final croppedPath = await ImageCropService.instance.cropImage(context, image.path);
-        final finalPath = croppedPath ?? image.path; // Si annulé, on garde l'original ou on ignore ? 
-        // L'utilisateur demande "donne la possibilité de resizer", donc on l'integre.
-        
+      final String? finalPath =
+          await ImagePickerHelper.pickAndOptionallyCrop(context);
+
+      if (finalPath != null) {
         final path =
             await ImageStorageService.instance.saveImagePermanently(finalPath);
         setState(() => _note.imagePaths.add(path));
       }
+    } catch (e) {
+      debugPrint('Erreur lors de la sélection de l\'image: $e');
     } finally {
       setState(() => _isSaving = false);
     }
@@ -243,7 +256,7 @@ class _NoteEditScreenState extends State<NoteEditScreen> {
                   color: Colors.grey.shade300,
                   borderRadius: BorderRadius.circular(2)),
             ),
-            const Text('Couleur de la story',
+            const Text('Couleur de la chronique',
                 style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600)),
             const SizedBox(height: 20),
             ColorPicker(
@@ -311,6 +324,8 @@ class _NoteEditScreenState extends State<NoteEditScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
+                          // Suggestions d'étincelles (supprimées d'ici, déplacées en BottomSheet)
+
                           // Images
                           if (_note.imagePaths.isNotEmpty) ...[
                             ImageGalleryEditor(
@@ -405,6 +420,12 @@ class _NoteEditScreenState extends State<NoteEditScreen> {
                 color: isDark ? AppTheme.textLight : AppTheme.textDark),
           ),
           const Spacer(),
+          // Inspiration / Étincelles
+          if (_availableSparks.isNotEmpty)
+            _buildTool(Icons.lightbulb_outline_rounded,
+                () => _showInspirationSheet(isDark), isDark,
+                color: AppTheme.skyBlue),
+          const SizedBox(width: 6),
           // Couleur
           _buildTool(Icons.palette_outlined, _showColorPicker, isDark),
           const SizedBox(width: 6),
@@ -485,5 +506,192 @@ class _NoteEditScreenState extends State<NoteEditScreen> {
   Color _getTextColor(Color bg, bool isDark) {
     if (isDark) return AppTheme.textLight;
     return bg.computeLuminance() > 0.5 ? AppTheme.textDark : Colors.white;
+  }
+
+  void _showInspirationSheet(bool isDark) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => Container(
+        height: MediaQuery.of(context).size.height * 0.75,
+        decoration: BoxDecoration(
+          color: isDark ? AppTheme.surfaceDark : Colors.white,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        child: Column(
+          children: [
+            Container(
+              width: 40,
+              height: 4,
+              margin: const EdgeInsets.symmetric(vertical: 12),
+              decoration: BoxDecoration(
+                color: Colors.grey.withOpacity(0.2),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.all(20),
+              child: Row(
+                children: [
+                  Icon(Icons.auto_awesome_rounded,
+                      color: AppTheme.skyBlue, size: 22),
+                  const SizedBox(width: 12),
+                  const Text(
+                    'Inspirations (Étincelles)',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
+                  const Spacer(),
+                  IconButton(
+                    onPressed: () => Navigator.pop(context),
+                    icon: const Icon(Icons.close_rounded),
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: GridView.builder(
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 2,
+                  mainAxisSpacing: 16,
+                  crossAxisSpacing: 16,
+                  childAspectRatio: 0.85,
+                ),
+                itemCount: _availableSparks.length,
+                itemBuilder: (context, index) {
+                  final spark = _availableSparks[index];
+                  return _buildSparkInspirationCard(spark, isDark);
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSparkInspirationCard(Spark spark, bool isDark) {
+    return GestureDetector(
+      onTap: () => _confirmApplySpark(spark),
+      child: Container(
+        decoration: BoxDecoration(
+          color: isDark
+              ? Colors.white.withOpacity(0.05)
+              : Colors.grey.withOpacity(0.05),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: AppTheme.skyBlue.withOpacity(0.1)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (spark.imagePath != null)
+              Expanded(
+                child: ClipRRect(
+                  borderRadius:
+                      const BorderRadius.vertical(top: Radius.circular(20)),
+                  child: Image.file(
+                    File(spark.imagePath!),
+                    width: double.infinity,
+                    fit: BoxFit.cover,
+                  ),
+                ),
+              )
+            else
+              Expanded(
+                child: Center(
+                  child: Icon(Icons.lightbulb_outline_rounded,
+                      color: AppTheme.skyBlue.withOpacity(0.2), size: 40),
+                ),
+              ),
+            Padding(
+              padding: const EdgeInsets.all(12),
+              child: Text(
+                spark.title,
+                style:
+                    const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _confirmApplySpark(Spark spark) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text('Appliquer l\'étincelle ?'),
+        content: const Text(
+            'Cela remplacera le titre et le contenu actuel de votre chronique.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Annuler'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(context); // Dialog
+              Navigator.pop(context); // BottomSheet
+              _applySpark(spark);
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppTheme.skyBlue,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12)),
+            ),
+            child: const Text('Appliquer'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _applySpark(Spark spark) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    setState(() {
+      _titleController.text = spark.title;
+      if (spark.description != null) {
+        _contentController.text = spark.description!;
+      }
+      if (spark.imagePath != null) {
+        _note.imagePaths.add(spark.imagePath!);
+      }
+      _showSparks = false;
+    });
+
+    // Suggestion : supprimer l'étincelle après utilisation pour "ranger"
+    // Style premium pour la SnackBar
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            Icon(Icons.auto_awesome_rounded, color: Colors.white.withOpacity(0.9), size: 20),
+            const SizedBox(width: 12),
+            const Expanded(
+              child: Text(
+                'L\'inspiration a été appliquée !',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 14,
+                ),
+              ),
+            ),
+          ],
+        ),
+        behavior: SnackBarBehavior.floating,
+        backgroundColor: isDark ? AppTheme.cardDark : AppTheme.skyBlue,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        margin: const EdgeInsets.all(16),
+        elevation: 6,
+        duration: const Duration(seconds: 2),
+      ),
+    );
   }
 }

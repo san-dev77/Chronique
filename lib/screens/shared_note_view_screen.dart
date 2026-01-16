@@ -10,8 +10,7 @@ import '../theme/app_theme.dart';
 import '../utils/date_formatter.dart';
 import '../widgets/rich_text_viewer.dart';
 
-
-/// Écran pour visualiser une note partagée avec réactions et commentaires
+/// Écran pour visualiser une chronique partagée avec réactions et commentaires
 class SharedNoteViewScreen extends StatefulWidget {
   final SharedNote sharedNote;
 
@@ -28,7 +27,10 @@ class _SharedNoteViewScreenState extends State<SharedNoteViewScreen>
   bool _isReacting = false;
   bool _isSendingComment = false;
   bool _showContent = false;
-  bool _storyFinished = false;
+  bool _chroniqueFinished = false;
+  bool _waitingForContinue = false;
+
+  final GlobalKey<RichTextViewerState> _contentViewerKey = GlobalKey();
 
   late AnimationController _finishedController;
   late Animation<double> _finishedScale;
@@ -60,9 +62,9 @@ class _SharedNoteViewScreenState extends State<SharedNoteViewScreen>
     super.dispose();
   }
 
-  void _finishStory() {
+  void _finishChronique() {
     if (mounted) {
-      setState(() => _storyFinished = true);
+      setState(() => _chroniqueFinished = true);
       _finishedController.forward();
     }
   }
@@ -71,7 +73,7 @@ class _SharedNoteViewScreenState extends State<SharedNoteViewScreen>
     if (mounted) {
       setState(() {
         _showContent = true;
-        _storyFinished = true;
+        _chroniqueFinished = true;
       });
       _finishedController.forward();
     }
@@ -186,70 +188,85 @@ class _SharedNoteViewScreenState extends State<SharedNoteViewScreen>
                 Column(
                   children: [
                     Expanded(
-                      child: SingleChildScrollView(
-                        padding: EdgeInsets.fromLTRB(24,
-                            MediaQuery.of(context).padding.top + 70, 24, 20),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            // 1. IMAGES D'ABORD - Stable, pas de rebuild flickering
-                            if (note.imagesBase64.isNotEmpty) ...[
-                              _buildImageGallery(note.imagesBase64),
-                              const SizedBox(height: 32),
+                      child: GestureDetector(
+                        onTap: () {
+                          debugPrint(
+                              'TAP detected! _waitingForContinue=$_waitingForContinue, key.currentState=${_contentViewerKey.currentState}');
+                          if (_waitingForContinue) {
+                            setState(() => _waitingForContinue = false);
+                            _contentViewerKey.currentState?.continueTyping();
+                            debugPrint('Called continueTyping');
+                          }
+                        },
+                        behavior: HitTestBehavior.opaque,
+                        child: SingleChildScrollView(
+                          padding: EdgeInsets.fromLTRB(24,
+                              MediaQuery.of(context).padding.top + 70, 24, 20),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              // 1. IMAGES D'ABORD - Stable, pas de rebuild flickering
+                              if (note.imagesBase64.isNotEmpty) ...[
+                                _buildImageGallery(note.imagesBase64),
+                                const SizedBox(height: 32),
+                              ],
+
+                              // 2. TITRE - Rich Text avec Typewriter
+                              if (note.title.isNotEmpty && _showContent)
+                                RichTextViewer(
+                                  key: ValueKey('title_${note.id}'),
+                                  content: note.title,
+                                  skip: _chroniqueFinished,
+                                  baseStyle: TextStyle(
+                                    fontSize: 32,
+                                    fontWeight: FontWeight.w900,
+                                    color: textColor,
+                                    height: 1.1,
+                                    letterSpacing: -0.5,
+                                  ),
+                                ),
+
+                              if (note.title.isNotEmpty)
+                                const SizedBox(height: 24),
+
+                              // 3. CONTENU - Rich Text avec Typewriter
+                              if (note.content.isNotEmpty && _showContent)
+                                RichTextViewer(
+                                  key: _contentViewerKey,
+                                  content: note.content,
+                                  formattedContent: note.formattedContent,
+                                  skip: _chroniqueFinished,
+                                  chunkSize: 300,
+                                  baseStyle: TextStyle(
+                                    fontSize: 18,
+                                    color: textColor.withOpacity(0.9),
+                                    height: 1.7,
+                                    fontFamily: 'Georgia',
+                                  ),
+                                  startDelay: const Duration(milliseconds: 800),
+                                  onPause: () => setState(
+                                      () => _waitingForContinue = true),
+                                  onComplete: _finishChronique,
+                                ),
+
+                              // Métadonnées
+                              const SizedBox(height: 48),
+                              _buildMetaBadge(note, textColor),
+
+                              // Terminé
+                              if (_chroniqueFinished)
+                                _buildFinished(textColor, isDark, primaryColor),
+
+                              const SizedBox(height: 40),
+                              _buildReactionsAndComments(
+                                  note, isDark, primaryColor),
+
+                              const SizedBox(height: 160),
                             ],
-
-                            // 2. TITRE - Rich Text avec Typewriter
-                            if (note.title.isNotEmpty && _showContent)
-                              RichTextViewer(
-                                key: ValueKey('title_${note.id}'),
-                                content: note.title,
-                                skip: _storyFinished,
-                                baseStyle: TextStyle(
-                                  fontSize: 32,
-                                  fontWeight: FontWeight.w900,
-                                  color: textColor,
-                                  height: 1.1,
-                                  letterSpacing: -0.5,
-                                ),
-                              ),
-
-                            if (note.title.isNotEmpty)
-                              const SizedBox(height: 24),
-
-                            // 3. CONTENU - Rich Text avec Typewriter
-                            if (note.content.isNotEmpty && _showContent)
-                              RichTextViewer(
-                                key: ValueKey('content_${note.id}'),
-                                content: note.content,
-                                formattedContent: note.formattedContent,
-                                skip: _storyFinished,
-                                baseStyle: TextStyle(
-                                  fontSize: 18,
-                                  color: textColor.withOpacity(0.9),
-                                  height: 1.7,
-                                  fontFamily: 'Georgia',
-                                ),
-                                startDelay: const Duration(milliseconds: 800),
-                                onComplete: _finishStory,
-                              ),
-
-                            // Métadonnées
-                            const SizedBox(height: 48),
-                            _buildMetaBadge(note, textColor),
-
-                            // Terminé
-                            if (_storyFinished)
-                              _buildFinished(textColor, isDark, primaryColor),
-
-                            const SizedBox(height: 40),
-                            _buildReactionsAndComments(
-                                note, isDark, primaryColor),
-
-                            const SizedBox(height: 160),
-                          ],
+                          ),
                         ),
                       ),
-                    ),
+                    )
                   ],
                 ),
 
@@ -258,7 +275,7 @@ class _SharedNoteViewScreenState extends State<SharedNoteViewScreen>
                   _buildInteractionBar(note, isDark, primaryColor),
 
                 // Bouton Skip
-                if (!_storyFinished)
+                if (!_chroniqueFinished)
                   Positioned(
                     bottom: isRecipient ? 150 : 40,
                     right: 24,
@@ -470,8 +487,8 @@ class _SharedNoteViewScreenState extends State<SharedNoteViewScreen>
             ),
           ),
           const SizedBox(height: 12),
-          ...comments.map(
-              (comment) => _buildCommentCard(comment, isDark, primaryColor, note)),
+          ...comments.map((comment) =>
+              _buildCommentCard(comment, isDark, primaryColor, note)),
         ],
       ],
     );
@@ -485,10 +502,11 @@ class _SharedNoteViewScreenState extends State<SharedNoteViewScreen>
     return counts;
   }
 
-  Widget _buildCommentCard(Reaction comment, bool isDark, Color primaryColor, SharedNote note) {
+  Widget _buildCommentCard(
+      Reaction comment, bool isDark, Color primaryColor, SharedNote note) {
     // Essayer de trouver l'utilisateur dans les membres (ou utiliser les infos de la note si c'est l'auteur)
     final bool isAuthor = comment.userId == note.senderId;
-    
+
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(12),

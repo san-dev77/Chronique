@@ -234,7 +234,7 @@ class _SplashScreenCleanState extends State<SplashScreenClean>
 
                       // Sous-titre
                       Text(
-                        'The Story Box',
+                        'The Chronique Box',
                         style: TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.w500,

@@ -20,6 +20,7 @@ import 'services/auth_service.dart';
 import 'services/sharing_service.dart';
 import 'services/cloud_sync_service.dart'; // Import manquant
 import 'services/realtime_notification_service.dart';
+import 'services/spark_service.dart';
 import 'theme/app_theme.dart';
 import 'firebase_options.dart';
 
@@ -47,6 +48,9 @@ void main() async {
 
   // Initialiser le service de stockage d'images
   await ImageStorageService.instance.initialize();
+
+  // Initialiser le service d'étincelles (brouillons)
+  await SparkService.instance.initialize();
 
   // Initialiser le service de connectivité
   await ConnectivityService.instance.initialize();
@@ -106,6 +110,7 @@ class _NoteKeeperAppState extends State<NoteKeeperApp> {
 
       // Re-initialiser NoteService pour changer de box Hive (isolation des données)
       await NoteService.instance.initializeForUser(user?.uid);
+      await SparkService.instance.initialize();
 
       if (user != null) {
         // Commencer l'écoute des notifications temps réel

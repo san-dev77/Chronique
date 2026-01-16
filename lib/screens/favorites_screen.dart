@@ -154,7 +154,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: Text(
-                    '${_favorites.length} stories',
+                    '${_favorites.length} chroniques',
                     style: TextStyle(
                         fontSize: 13,
                         fontWeight: FontWeight.w600,
@@ -202,7 +202,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
               ),
               const SizedBox(height: 8),
               Text(
-                'Ajoutez des stories à vos favoris',
+                'Ajoutez des chroniques à vos favoris',
                 style: TextStyle(
                   fontSize: 15,
                   color: isDark ? AppTheme.textMutedDark : AppTheme.textMuted,

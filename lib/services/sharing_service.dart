@@ -183,8 +183,8 @@ class SharingService {
       recipientId: member.uid,
       type: NotificationType.share,
       sharedNoteId: sharedNoteId,
-      title: 'Nouvelle story reçue',
-      body: '${currentUser.displayName ?? "Quelqu'un"} vous a partagé une story : ${note.title}',
+      title: 'Nouvelle chronique reçue',
+      body: '${currentUser.displayName ?? "Quelqu'un"} vous a partagé une chronique : ${note.title}',
     );
 
     return sharedNote;
@@ -247,8 +247,8 @@ class SharingService {
         recipientId: recipientId,
         type: NotificationType.share,
         sharedNoteId: sharedNoteId,
-        title: 'Nouvelle story reçue',
-        body: '${currentUser.displayName ?? "Quelqu'un"} vous a partagé une story : ${note.title}',
+        title: 'Nouvelle chronique reçue',
+        body: '${currentUser.displayName ?? "Quelqu'un"} vous a partagé une chronique : ${note.title}',
       );
     }
 
@@ -416,7 +416,7 @@ class SharingService {
         type: NotificationType.reaction,
         sharedNoteId: sharedNoteId,
         title: 'Nouvelle reaction',
-        body: '$senderName a réagi $emoji à votre story',
+        body: '$senderName a réagi $emoji à votre chronique',
       );
     }
   }

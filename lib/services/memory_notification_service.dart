@@ -1,6 +1,7 @@
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:workmanager/workmanager.dart';
 import 'dart:math';
 import '../models/note.dart';
 import 'note_service.dart';
@@ -28,15 +29,15 @@ class MemoryNotificationService {
   void Function(String noteId)? onOpenNote;
 
   // Channel IDs pour Android
-  static const String _channelId = 'story_box_memories';
+  static const String _channelId = 'chronique_box_memories';
   static const String _channelName = 'Souvenirs Chroniques';
   static const String _channelDesc =
-      'Notifications pour redécouvrir vos anciennes stories';
+      'Notifications pour redécouvrir vos anciennes chroniques';
 
-  static const String _channelIdCreate = 'story_box_create';
-  static const String _channelNameCreate = 'Creation de stories';
+  static const String _channelIdCreate = 'chronique_box_create';
+  static const String _channelNameCreate = 'Creation de chroniques';
   static const String _channelDescCreate =
-      'Notifications lors de la creation de stories';
+      'Notifications lors de la creation de chroniques';
 
   // Périodes de souvenirs (en jours)
   static const Map<int, String> memoryPeriods = {
@@ -108,6 +109,11 @@ class MemoryNotificationService {
 
       _isInitialized = true;
       debugPrint('MemoryNotificationService pret');
+
+      // Planifier le prochain souvenir "direct"
+      if (_memoriesEnabled) {
+        await scheduleNextMemoryNotification();
+      }
     } catch (e) {
       _isAvailable = false;
       debugPrint('Notifications non disponibles: $e');
@@ -155,6 +161,11 @@ class MemoryNotificationService {
     _memoriesHour = hour;
     _memoriesMinute = minute;
     await _savePreferences();
+    
+    // Reprogrammer immédiatement le timer "direct"
+    if (_memoriesEnabled) {
+      await scheduleNextMemoryNotification();
+    }
   }
 
   /// Crée les channels de notification sur Android
@@ -426,6 +437,45 @@ class MemoryNotificationService {
     } catch (e) {
       debugPrint('❌ Erreur notification souvenir: $e');
       rethrow; // Pour que l'appelant sache qu'il y a eu une erreur
+    }
+  }
+
+  /// Planification précise via Workmanager
+  Future<void> scheduleNextMemoryNotification() async {
+    try {
+      final now = DateTime.now();
+      var scheduledDate = DateTime(
+        now.year,
+        now.month,
+        now.day,
+        _memoriesHour,
+        _memoriesMinute,
+      );
+
+      // Si l'heure est déjà passée aujourd'hui, on planifie pour demain
+      if (scheduledDate.isBefore(now)) {
+        scheduledDate = scheduledDate.add(const Duration(days: 1));
+      }
+
+      final delay = scheduledDate.difference(now);
+      
+      debugPrint('🚀 Scheduling memory task in $delay (${scheduledDate})');
+
+      await Workmanager().registerOneOffTask(
+        'notebox_memories_oneoff_task',
+        'notebox_memories_oneoff_task',
+        initialDelay: delay,
+        existingWorkPolicy: ExistingWorkPolicy.replace, // Très important pour ne pas empiler
+        constraints: Constraints(
+          networkType: NetworkType.not_required,
+        ),
+      );
+
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('next_scheduled_notif', scheduledDate.toIso8601String());
+
+    } catch (e) {
+      debugPrint('Error scheduling notification: $e');
     }
   }
 

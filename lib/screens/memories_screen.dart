@@ -95,7 +95,7 @@ class _MemoriesScreenState extends State<MemoriesScreen> {
       if (randomSelection.isNotEmpty) {
         collections.add(MemoryCollection(
           title: 'Redécouvrez',
-          subtitle: 'Stories oubliées',
+          subtitle: 'Chroniques oubliées',
           notes: randomSelection,
           icon: Icons.auto_awesome_rounded,
           color: AppTheme.skyBlue,
@@ -149,7 +149,7 @@ class _MemoriesScreenState extends State<MemoriesScreen> {
       final selected = _selectRandomNotes(topLongNotes, 5);
       collections.add(MemoryCollection(
         title: 'Vos moments intenses',
-        subtitle: 'Stories les plus riches',
+        subtitle: 'Chroniques les plus riches',
         notes: selected,
         icon: Icons.local_fire_department_rounded,
         color: AppTheme.skyBlue,
@@ -198,7 +198,7 @@ class _MemoriesScreenState extends State<MemoriesScreen> {
       if (filteredByColor.length >= 2) {
         collections.add(MemoryCollection(
           title: 'Thème de Couleur',
-          subtitle: 'Stories coordonnées',
+          subtitle: 'Chroniques coordonnées',
           notes: _selectRandomNotes(filteredByColor, 5),
           icon: Icons.palette_rounded,
           color: randomColor,
@@ -392,7 +392,7 @@ class _MemoriesScreenState extends State<MemoriesScreen> {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'Redécouvrez vos stories',
+                  'Redécouvrez vos chroniques',
                   style: TextStyle(
                     fontSize: 14,
                     color: isDark ? AppTheme.textMutedDark : AppTheme.textMuted,
@@ -445,7 +445,7 @@ class _MemoriesScreenState extends State<MemoriesScreen> {
             ),
             const SizedBox(height: 8),
             Text(
-              'Créez des stories pour générer des souvenirs',
+              'Créez des chroniques pour générer des souvenirs',
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontSize: 15,

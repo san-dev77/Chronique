@@ -36,13 +36,16 @@ class _NoteViewScreenState extends State<NoteViewScreen>
   int _currentContentIndex = 0;
   Timer? _typeTimer;
 
-  // Story mode
+  // Chronique mode
   bool _titleComplete = false;
   bool _contentComplete = false;
   bool _waitingForTap = false;
-  bool _storyFinished = false;
+  bool _chroniqueFinished = false;
   int _chunkSize = 150; // Caracteres par chunk
   int _currentChunkEnd = 0;
+
+  // Key for RichTextViewer to access continueTyping
+  final GlobalKey<RichTextViewerState> _contentViewerKey = GlobalKey();
 
   // Animation
   late AnimationController _cursorController;
@@ -50,7 +53,7 @@ class _NoteViewScreenState extends State<NoteViewScreen>
   late Animation<double> _finishedScale;
 
   // Vitesse de frappe (ms par caractere)
-  final int _typeSpeed = 25;
+  final int _typeSpeed = 15;
 
   @override
   void initState() {
@@ -113,7 +116,7 @@ class _NoteViewScreenState extends State<NoteViewScreen>
 
   void _startContentTypewriter() {
     if (widget.note.content.isEmpty) {
-      _finishStory();
+      _finishChronique();
       return;
     }
 
@@ -134,7 +137,7 @@ class _NoteViewScreenState extends State<NoteViewScreen>
 
         // Verifier si on a encore du contenu
         if (_currentContentIndex >= widget.note.content.length) {
-          _finishStory();
+          _finishChronique();
         } else {
           // Attendre un tap pour continuer
           setState(() => _waitingForTap = true);
@@ -143,22 +146,25 @@ class _NoteViewScreenState extends State<NoteViewScreen>
     });
   }
 
-  void _continueStory() {
+  void _continueChronique() {
     if (!_waitingForTap) return;
 
     setState(() => _waitingForTap = false);
+    
+    // Appeler continueTyping sur le RichTextViewer
+    _contentViewerKey.currentState?.continueTyping();
 
-    // Calculer le prochain chunk
+    // Calculer le prochain chunk (pour l'ancien système, peut être supprimé)
     _currentChunkEnd = (_currentContentIndex + _chunkSize)
         .clamp(0, widget.note.content.length);
 
     _typeContent();
   }
 
-  void _finishStory() {
+  void _finishChronique() {
     setState(() {
       _contentComplete = true;
-      _storyFinished = true;
+      _chroniqueFinished = true;
     });
     _finishedController.forward();
   }
@@ -171,7 +177,7 @@ class _NoteViewScreenState extends State<NoteViewScreen>
       _titleComplete = true;
       _contentComplete = true;
       _waitingForTap = false;
-      _storyFinished = true;
+      _chroniqueFinished = true;
     });
     _finishedController.forward();
   }
@@ -191,7 +197,7 @@ class _NoteViewScreenState extends State<NoteViewScreen>
       backgroundColor: bgColor,
       body: SafeArea(
         child: GestureDetector(
-          onTap: _waitingForTap ? _continueStory : null,
+          onTap: _waitingForTap ? _continueChronique : null,
           behavior: HitTestBehavior.opaque,
           child: Column(
             children: [
@@ -245,16 +251,20 @@ class _NoteViewScreenState extends State<NoteViewScreen>
                           if (widget.note.content.isNotEmpty &&
                               _titleComplete) ...[
                             RichTextViewer(
+                              key: _contentViewerKey,
                               content: widget.note.content,
                               formattedContent: widget.note.formattedContent,
-                              skip: _storyFinished || _contentComplete,
+                              skip: _chroniqueFinished || _contentComplete,
+                              chunkSize: _chunkSize,
+                              speed: Duration(milliseconds: _typeSpeed),
                               baseStyle: TextStyle(
                                 fontSize: 16,
                                 color: textColor.withOpacity(0.85),
                                 height: 1.8,
                                 fontFamily: 'Georgia',
                               ),
-                              onComplete: _finishStory,
+                              onPause: () => setState(() => _waitingForTap = true),
+                              onComplete: _finishChronique,
                             ),
                           ],
 
@@ -262,8 +272,8 @@ class _NoteViewScreenState extends State<NoteViewScreen>
                           if (_waitingForTap)
                             _buildTapToContinue(textColor, isDark),
 
-                          // "Termine" - fin de la story
-                          if (_storyFinished) _buildFinished(textColor, isDark),
+                          // "Termine" - fin de la chronique
+                          if (_chroniqueFinished) _buildFinished(textColor, isDark),
 
                           // Empty state
                           if (widget.note.title.isEmpty &&
@@ -277,7 +287,7 @@ class _NoteViewScreenState extends State<NoteViewScreen>
                     ),
 
                     // Bouton skip
-                    if (!_storyFinished)
+                    if (!_chroniqueFinished)
                       Positioned(
                         bottom: 20,
                         right: 20,
@@ -396,7 +406,7 @@ class _NoteViewScreenState extends State<NoteViewScreen>
               ),
               const SizedBox(height: 8),
               Text(
-                'Fin de la story.',
+                'Fin de la chronique.',
                 style: TextStyle(
                   fontSize: 14,
                   color: textColor.withOpacity(0.5),
@@ -463,7 +473,7 @@ class _NoteViewScreenState extends State<NoteViewScreen>
                 size: 64, color: textColor.withOpacity(0.25)),
             const SizedBox(height: 16),
             Text(
-              'Story vide',
+              'Chronique vide',
               style: TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.w600,
@@ -602,7 +612,7 @@ class _NoteViewScreenState extends State<NoteViewScreen>
       context: context,
       builder: (_) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text('Supprimer cette story ?',
+        title: const Text('Supprimer cette chronique ?',
             style: TextStyle(fontWeight: FontWeight.w700)),
         content: const Text('Cette action est irreversible.'),
         actions: [

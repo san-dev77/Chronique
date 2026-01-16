@@ -12,27 +12,33 @@ class RichTextViewer extends StatefulWidget {
   final Duration startDelay;
   final bool skip;
   final VoidCallback? onComplete;
+  final VoidCallback? onPause;
+  final int chunkSize;
 
   const RichTextViewer({
     super.key,
     required this.content,
     this.formattedContent,
     required this.baseStyle,
-    this.speed = const Duration(milliseconds: 25),
+    this.speed = const Duration(milliseconds: 15),
     this.startDelay = Duration.zero,
     this.skip = false,
     this.onComplete,
+    this.onPause,
+    this.chunkSize = 300,
   });
 
   @override
-  State<RichTextViewer> createState() => _RichTextViewerState();
+  State<RichTextViewer> createState() => RichTextViewerState();
 }
 
-class _RichTextViewerState extends State<RichTextViewer> with TickerProviderStateMixin {
+class RichTextViewerState extends State<RichTextViewer> with TickerProviderStateMixin {
   late List<TextSpanData> _fullSpans;
   List<TextSpanData> _displayedSpans = [];
   int _totalChars = 0;
   int _currentChars = 0;
+  int _currentChunkEnd = 0;
+  bool _waitingForTap = false;
   Timer? _timer;
   late AnimationController _cursorController;
 
@@ -76,8 +82,14 @@ class _RichTextViewerState extends State<RichTextViewer> with TickerProviderStat
   }
 
   void _startTyping() {
+    // Calculer le chunk initial
+    _currentChunkEnd = widget.chunkSize.clamp(0, _totalChars);
+    _runTypingLoop();
+  }
+
+  void _runTypingLoop() {
     _timer = Timer.periodic(widget.speed, (timer) {
-      if (_currentChars < _totalChars) {
+      if (_currentChars < _currentChunkEnd) {
         if (mounted) {
           setState(() {
             _currentChars++;
@@ -86,9 +98,31 @@ class _RichTextViewerState extends State<RichTextViewer> with TickerProviderStat
         }
       } else {
         timer.cancel();
-        if (mounted) widget.onComplete?.call();
+        
+        // Vérifier si on a atteint la fin totale
+        if (_currentChars >= _totalChars) {
+          if (mounted) widget.onComplete?.call();
+        } else {
+          // Pause et attendre un tap pour continuer
+          if (mounted) {
+            setState(() => _waitingForTap = true);
+            widget.onPause?.call();
+          }
+        }
       }
     });
+  }
+
+  void continueTyping() {
+    debugPrint('continueTyping called! _waitingForTap=$_waitingForTap, _currentChars=$_currentChars, _totalChars=$_totalChars');
+    if (!_waitingForTap) return;
+    
+    setState(() => _waitingForTap = false);
+    
+    // Calculer le prochain chunk
+    _currentChunkEnd = (_currentChars + widget.chunkSize).clamp(0, _totalChars);
+    debugPrint('Resuming typing: _currentChunkEnd=$_currentChunkEnd');
+    _runTypingLoop();
   }
 
   void _updateDisplayedSpans() {
@@ -161,8 +195,8 @@ class _RichTextViewerState extends State<RichTextViewer> with TickerProviderStat
       ));
     }
 
-    // Curseur à la fin du texte affiché
-    if (_currentChars < _totalChars) {
+    // Curseur à la fin du texte affiché (seulement si pas en attente de tap)
+    if (_currentChars < _totalChars && !_waitingForTap) {
       children.add(WidgetSpan(
         child: AnimatedBuilder(
           animation: _cursorController,
@@ -177,9 +211,28 @@ class _RichTextViewerState extends State<RichTextViewer> with TickerProviderStat
         ),
       ));
     }
+    
+    // Indicateur "Tapez pour continuer"
+    if (_waitingForTap) {
+      children.add(const WidgetSpan(
+        child: Padding(
+          padding: EdgeInsets.only(left: 8),
+          child: Icon(Icons.touch_app_rounded, size: 18, color: Colors.blue),
+        ),
+      ));
+    }
 
-    return RichText(
-      text: TextSpan(children: children, style: widget.baseStyle),
+    return GestureDetector(
+      onTap: () {
+        if (_waitingForTap) {
+          debugPrint('Internal tap: continuing...');
+          continueTyping();
+        }
+      },
+      behavior: HitTestBehavior.opaque,
+      child: RichText(
+        text: TextSpan(children: children, style: widget.baseStyle),
+      ),
     );
   }
 }

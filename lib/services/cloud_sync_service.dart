@@ -2,6 +2,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/note.dart';
 import 'auth_service.dart';
 import 'note_service.dart';
+import 'spark_service.dart';
+import '../models/spark.dart';
 
 /// Service de synchronisation cloud avec Firestore
 class CloudSyncService {
@@ -29,6 +31,13 @@ class CloudSyncService {
     final userId = AuthService.instance.userId;
     if (userId == null) return null;
     return _firestore.collection('users').doc(userId).collection('notes');
+  }
+
+  /// Collection des étincelles de l'utilisateur
+  CollectionReference? get _sparksCollection {
+    final userId = AuthService.instance.userId;
+    if (userId == null) return null;
+    return _firestore.collection('users').doc(userId).collection('sparks');
   }
 
   /// Upload une note vers Firestore
@@ -143,6 +152,62 @@ class CloudSyncService {
     }
   }
 
+  // --- METHODS FOR SPARKS ---
+
+  /// Upload une étincelle vers Firestore
+  Future<void> uploadSpark(Spark spark) async {
+    if (_sparksCollection == null) return;
+
+    try {
+      final sparkData = spark.toJson();
+      // On garde l'imagePath tel quel car c'est un chemin local,
+      // On pourrait aussi le supprimer comme pour les notes si on veut économiser de l'espace cloud
+      // pour des chemins qui ne seront plus valides ailleurs. 
+      // Mais pour les étincelles, l'image est plus "fugace".
+      sparkData.remove('imagePath'); 
+
+      sparkData['updatedAt'] = FieldValue.serverTimestamp();
+      sparkData['syncedAt'] = FieldValue.serverTimestamp();
+
+      await _sparksCollection!.doc(spark.id).set(sparkData);
+    } catch (e) {
+      print('Erreur upload spark ${spark.id}: $e');
+      rethrow;
+    }
+  }
+
+  /// Télécharge toutes les étincelles depuis Firestore
+  Future<List<Spark>> downloadAllSparks() async {
+    if (_sparksCollection == null) return [];
+
+    try {
+      final snapshot = await _sparksCollection!.get();
+      final sparks = <Spark>[];
+      for (final doc in snapshot.docs) {
+        try {
+          final data = doc.data() as Map<String, dynamic>;
+          sparks.add(Spark.fromJson(data));
+        } catch (e) {
+          print('Erreur parsing spark ${doc.id}: $e');
+        }
+      }
+      return sparks;
+    } catch (e) {
+      print('Erreur download all sparks: $e');
+      rethrow;
+    }
+  }
+
+  /// Supprime une étincelle de Firestore
+  Future<void> deleteSparkFromCloud(String sparkId) async {
+    if (_sparksCollection == null) return;
+    try {
+      await _sparksCollection!.doc(sparkId).delete();
+    } catch (e) {
+      print('Erreur suppression spark cloud $sparkId: $e');
+    }
+  }
+
   /// Synchronisation bidirectionnelle complète
   Future<SyncReport> syncAll() async {
     if (_notesCollection == null) {
@@ -181,24 +246,55 @@ class CloudSyncService {
         if (localNote == null && cloudNote != null) {
           // Note existe seulement dans le cloud → télécharger
           await NoteService.instance.saveNote(cloudNote);
-          report.downloadedNotes++;
+          report.downloadedItems++;
         } else if (localNote != null && cloudNote == null) {
           // Note existe seulement localement → uploader
           await uploadNote(localNote);
-          report.uploadedNotes++;
+          report.uploadedItems++;
         } else if (localNote != null && cloudNote != null) {
           // Note existe des deux côtés → comparer dates
           if (localNote.modifiedAt.isAfter(cloudNote.modifiedAt)) {
             // Local plus récent → uploader
             await uploadNote(localNote);
-            report.uploadedNotes++;
+            report.uploadedItems++;
           } else if (cloudNote.modifiedAt.isAfter(localNote.modifiedAt)) {
             // Cloud plus récent → télécharger
             await NoteService.instance.saveNote(cloudNote);
-            report.downloadedNotes++;
+            report.downloadedItems++;
           } else {
             // Identiques
-            report.unchangedNotes++;
+            report.unchangedItems++;
+          }
+        }
+      }
+
+      // --- SYNC SPARKS ---
+      final localSparks = SparkService.instance.getAllSparks();
+      final cloudSparks = await downloadAllSparks();
+
+      final localSparksMap = {for (var s in localSparks) s.id: s};
+      final cloudSparksMap = {for (var s in cloudSparks) s.id: s};
+      final allSparkIds = {...localSparksMap.keys, ...cloudSparksMap.keys};
+
+      for (final sparkId in allSparkIds) {
+        final localSpark = localSparksMap[sparkId];
+        final cloudSpark = cloudSparksMap[sparkId];
+
+        if (localSpark == null && cloudSpark != null) {
+          await SparkService.instance.saveSpark(cloudSpark, skipCloud: true);
+          report.downloadedItems++;
+        } else if (localSpark != null && cloudSpark == null) {
+          await uploadSpark(localSpark);
+          report.uploadedItems++;
+        } else if (localSpark != null && cloudSpark != null) {
+          if (localSpark.modifiedAt.isAfter(cloudSpark.modifiedAt)) {
+            await uploadSpark(localSpark);
+            report.uploadedItems++;
+          } else if (cloudSpark.modifiedAt.isAfter(localSpark.modifiedAt)) {
+            await SparkService.instance.saveSpark(cloudSpark, skipCloud: true);
+            report.downloadedItems++;
+          } else {
+            report.unchangedItems++;
           }
         }
       }
@@ -258,9 +354,9 @@ class SyncReport {
   bool success = false;
   int totalLocalNotes = 0;
   int totalCloudNotes = 0;
-  int uploadedNotes = 0;
-  int downloadedNotes = 0;
-  int unchangedNotes = 0;
+  int uploadedItems = 0;
+  int downloadedItems = 0;
+  int unchangedItems = 0;
   String? errorMessage;
 
   String getSummary() {
@@ -270,16 +366,16 @@ class SyncReport {
 
     final parts = <String>[];
 
-    if (uploadedNotes > 0) {
-      parts.add('⬆️ $uploadedNotes uploadée(s)');
+    if (uploadedItems > 0) {
+      parts.add('⬆️ $uploadedItems uploadé(s)');
     }
 
-    if (downloadedNotes > 0) {
-      parts.add('⬇️ $downloadedNotes téléchargée(s)');
+    if (downloadedItems > 0) {
+      parts.add('⬇️ $downloadedItems téléchargé(s)');
     }
 
-    if (unchangedNotes > 0) {
-      parts.add('✓ $unchangedNotes à jour');
+    if (unchangedItems > 0) {
+      parts.add('✓ $unchangedItems à jour');
     }
 
     if (parts.isEmpty) {
@@ -289,5 +385,5 @@ class SyncReport {
     return parts.join('\n');
   }
 
-  int get totalSynced => uploadedNotes + downloadedNotes;
+  int get totalSynced => uploadedItems + downloadedItems;
 }
