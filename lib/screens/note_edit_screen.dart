@@ -350,7 +350,10 @@ class _NoteEditScreenState extends State<NoteEditScreen> {
                             cursorColor: AppTheme.skyBlue,
                             backgroundCursorColor: Colors.grey,
                             maxLines: null,
-                            onChanged: (_) => setState(() {}),
+                            onChanged: (_) {
+                              // On ne fait plus de setState ici pour éviter de casser la composition du clavier
+                              // Les controllers gèrent déjà leur état interne
+                            },
                           ),
                           if (_titleController.text.isEmpty)
                             GestureDetector(
@@ -391,7 +394,9 @@ class _NoteEditScreenState extends State<NoteEditScreen> {
                             ),
                             placeholder: 'Commencez à écrire...',
                             cursorColor: AppTheme.skyBlue,
-                            onChanged: (_) => setState(() {}),
+                            onChanged: (_) {
+                              // On ne fait plus de setState ici pour éviter de casser la composition du clavier
+                            },
                           ),
 
                           const SizedBox(height: 200),

@@ -166,6 +166,7 @@ class _NotesScreenState extends State<NotesScreen> {
         onSave: (spark) async {
           await SparkService.instance.saveSpark(spark);
           // Optionnel: rafraichir si on affiche les sparks ici
+          _loadNotes();
         },
       ),
     ));

@@ -38,7 +38,6 @@ class RichTextEditingController extends TextEditingController {
 
     final oldText = oldValue.text;
     final newText = newValue.text;
-    final oldSel = oldValue.selection;
 
     if (oldText == newText) return;
 
@@ -47,39 +46,32 @@ class RichTextEditingController extends TextEditingController {
       return;
     }
 
-    if (!oldSel.isValid) {
-      _spans = [TextSpanData(text: newText)];
-      return;
+    // Algorithme de diff par prefixe/suffixe commun
+    // Plus robuste que de se baser sur la selection car les suggestions claviers
+    // remplacent souvent la zone de composition.
+    
+    // 1. Trouver le prefixe commun
+    int prefixLen = 0;
+    while (prefixLen < oldText.length && 
+           prefixLen < newText.length && 
+           oldText[prefixLen] == newText[prefixLen]) {
+      prefixLen++;
     }
 
-    // Calculer la zone modifiée
-    int start;
-    int end;
-    String insertion;
-
-    if (!oldSel.isCollapsed) {
-      // Remplacement d'une sélection
-      start = oldSel.start;
-      end = oldSel.end;
-      // L'insertion est ce qui se trouve entre start et (start + diff_after_replacement)
-      int newEnd = newValue.selection.end;
-      int diff = newText.length - (oldText.length - (end - start));
-      insertion = newText.substring(start, start + diff.clamp(0, newText.length - start));
-    } else {
-      // Ajout ou Suppression au curseur
-      int diff = newText.length - oldText.length;
-      if (diff > 0) {
-        // Ajout
-        start = newValue.selection.start - diff;
-        end = start;
-        insertion = newText.substring(start.clamp(0, newText.length), (start + diff).clamp(0, newText.length));
-      } else {
-        // Suppression (backspace ou delete)
-        start = newValue.selection.start;
-        end = start - diff; // end est après start
-        insertion = "";
-      }
+    // 2. Trouver le suffixe commun
+    int suffixLen = 0;
+    while (suffixLen < (oldText.length - prefixLen) && 
+           suffixLen < (newText.length - prefixLen) && 
+           oldText[oldText.length - 1 - suffixLen] == newText[newText.length - 1 - suffixLen]) {
+      suffixLen++;
     }
+
+    // 3. Delimiter la zone remplacee dans l'ancien texte
+    final int start = prefixLen;
+    final int end = oldText.length - suffixLen;
+    
+    // 4. Delimiter l'insertion dans le nouveau texte
+    final String insertion = newText.substring(prefixLen, newText.length - suffixLen);
 
     _applyChangeToSpans(start, end, insertion);
   }
@@ -305,22 +297,57 @@ class RichTextEditingController extends TextEditingController {
 
     final List<TextSpan> children = [];
     final defaultStyle = style ?? const TextStyle();
+    
+    // Si on a une zone de composition (clavier en cours de suggestion)
+    final composingRegion = value.composing;
+    final bool hasComposing = withComposing && composingRegion.isValid && !composingRegion.isCollapsed;
 
+    int currentPos = 0;
     for (final span in _spans) {
-      children.add(TextSpan(
-        text: span.text,
-        style: defaultStyle.copyWith(
-          fontWeight: span.isBold ? FontWeight.bold : null,
-          fontStyle: span.isItalic ? FontStyle.italic : null,
-          color: span.textColor,
-          backgroundColor: span.isQuote 
-              ? (span.backgroundColor ?? Colors.grey.withOpacity(0.1))
-              : span.backgroundColor,
-          decoration: span.isQuote ? TextDecoration.underline : null,
-          decorationStyle: TextDecorationStyle.solid,
-          decorationColor: defaultStyle.color?.withOpacity(0.3),
-        ),
-      ));
+      final int spanEnd = currentPos + span.text.length;
+      final TextStyle spanStyle = defaultStyle.copyWith(
+        fontWeight: span.isBold ? FontWeight.bold : null,
+        fontStyle: span.isItalic ? FontStyle.italic : null,
+        color: span.textColor,
+        backgroundColor: span.isQuote 
+            ? (span.backgroundColor ?? Colors.grey.withOpacity(0.1))
+            : span.backgroundColor,
+        decoration: span.isQuote ? TextDecoration.underline : null,
+        decorationStyle: TextDecorationStyle.solid,
+        decorationColor: defaultStyle.color?.withOpacity(0.3),
+      );
+
+      if (!hasComposing || spanEnd <= composingRegion.start || currentPos >= composingRegion.end) {
+        // Pas d'intersection avec la zone de composition
+        children.add(TextSpan(text: span.text, style: spanStyle));
+      } else {
+        // Intersection avec la zone de composition
+        final int intersectStart = (composingRegion.start - currentPos).clamp(0, span.text.length);
+        final int intersectEnd = (composingRegion.end - currentPos).clamp(0, span.text.length);
+
+        // Avant l'intersection
+        if (intersectStart > 0) {
+          children.add(TextSpan(
+            text: span.text.substring(0, intersectStart),
+            style: spanStyle,
+          ));
+        }
+
+        // L'intersection (avec soulignement pour indiquer la composition)
+        children.add(TextSpan(
+          text: span.text.substring(intersectStart, intersectEnd),
+          style: spanStyle.merge(const TextStyle(decoration: TextDecoration.underline)),
+        ));
+
+        // Après l'intersection
+        if (intersectEnd < span.text.length) {
+          children.add(TextSpan(
+            text: span.text.substring(intersectEnd),
+            style: spanStyle,
+          ));
+        }
+      }
+      currentPos = spanEnd;
     }
 
     return TextSpan(style: style, children: children);

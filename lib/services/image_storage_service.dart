@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as path;
 
@@ -71,6 +72,21 @@ class ImageStorageService {
     }
     
     return permanentPaths;
+  }
+
+  /// Sauvegarde une image à partir de ses bytes (utile pour le Cloud Sync)
+  Future<String> saveImageFromBytes(Uint8List bytes, String extension) async {
+    await initialize();
+
+    // Générer un nom unique
+    final timestamp = DateTime.now().millisecondsSinceEpoch;
+    final fileName = 'note_image_$timestamp.$extension';
+    final destinationPath = '${_imagesDirectory!.path}/$fileName';
+    
+    final file = File(destinationPath);
+    await file.writeAsBytes(bytes);
+    
+    return destinationPath;
   }
 
   /// Vérifie si une image existe et est accessible

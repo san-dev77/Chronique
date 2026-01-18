@@ -37,6 +37,7 @@ enum SyncStatus { idle, syncing, success, offline, error }
 class _MainScreenState extends State<MainScreen> {
   late int _currentIndex = 0;
   SyncStatus _syncStatus = SyncStatus.idle;
+  SyncReport? _lastSyncReport;
   bool _isConnected = true;
   StreamSubscription? _connectivitySub;
 
@@ -75,10 +76,31 @@ class _MainScreenState extends State<MainScreen> {
     }
     setState(() => _syncStatus = SyncStatus.syncing);
     try {
-      await CloudSyncService.instance.syncAll();
-      if (mounted) setState(() => _syncStatus = SyncStatus.success);
-    } catch (_) {
-      if (mounted) setState(() => _syncStatus = SyncStatus.error);
+      final report = await CloudSyncService.instance.syncAll();
+      if (mounted) {
+        setState(() {
+          _lastSyncReport = report;
+          _syncStatus = report.success ? SyncStatus.success : SyncStatus.error;
+        });
+        
+        // Cacher automatiquement le badge "Success" après 5 secondes
+        if (report.success) {
+          Future.delayed(const Duration(seconds: 5), () {
+            if (mounted && _syncStatus == SyncStatus.success) {
+              setState(() => _syncStatus = SyncStatus.idle);
+            }
+          });
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _syncStatus = SyncStatus.error;
+          _lastSyncReport = SyncReport()
+            ..success = false
+            ..errorMessage = e.toString();
+        });
+      }
     }
   }
 
@@ -114,8 +136,7 @@ class _MainScreenState extends State<MainScreen> {
               ),
             // Badge sync (Affiche seulement en cas d'erreur ou offline)
             if (isSignedIn &&
-                (_syncStatus == SyncStatus.error ||
-                    _syncStatus == SyncStatus.offline))
+                (_syncStatus != SyncStatus.idle))
               Positioned(
                 top: MediaQuery.of(context).padding.top + 10,
                 left: 16,
@@ -271,6 +292,8 @@ class _MainScreenState extends State<MainScreen> {
         statusIcon = Icons.cloud_queue_rounded;
     }
 
+    final reportSummary = _lastSyncReport?.getSummary() ?? '';
+
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -310,6 +333,40 @@ class _MainScreenState extends State<MainScreen> {
                 color: isDark ? Colors.white70 : Colors.grey.shade700,
               ),
             ),
+            if (reportSummary.isNotEmpty && _syncStatus != SyncStatus.syncing) ...[
+              const SizedBox(height: 16),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: (isDark ? Colors.white : Colors.black).withOpacity(0.05),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: (isDark ? Colors.white : Colors.black).withOpacity(0.1)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Détails de la dernière opération:',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                        color: isDark ? Colors.white54 : Colors.grey.shade600,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      reportSummary,
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontFamily: 'monospace',
+                        color: _syncStatus == SyncStatus.error ? Colors.redAccent : (isDark ? Colors.white : AppTheme.textDark),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
             const SizedBox(height: 20),
             Container(
               padding: const EdgeInsets.all(12),

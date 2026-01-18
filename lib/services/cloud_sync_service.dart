@@ -3,6 +3,8 @@ import '../models/note.dart';
 import 'auth_service.dart';
 import 'note_service.dart';
 import 'spark_service.dart';
+import 'image_base64_service.dart';
+import 'image_storage_service.dart';
 import '../models/spark.dart';
 
 /// Service de synchronisation cloud avec Firestore
@@ -41,7 +43,7 @@ class CloudSyncService {
   }
 
   /// Upload une note vers Firestore
-  /// IMPORTANT: Les chemins d'images sont exclus (images restent en local)
+  /// Inclut désormais les images encodées en Base64
   Future<void> uploadNote(Note note) async {
     if (_notesCollection == null) {
       throw Exception('Utilisateur non connecté');
@@ -50,13 +52,20 @@ class CloudSyncService {
     try {
       final noteData = note.toJson();
 
-      // SUPPRIME les chemins d'images pour ne pas sync (images en local uniquement)
+      // Encode les images en Base64 pour le cloud
+      if (note.imagePaths.isNotEmpty) {
+        final imagesBase64 = await ImageBase64Service.instance
+            .encodeMultipleImages(note.imagePaths, maxImages: 5);
+        noteData['imagesBase64'] = imagesBase64;
+      }
+      
+      // On retire quand même les chemins locaux car ils ne sont pas valides sur un autre appareil
       noteData.remove('imagePaths');
 
       // Ajouter les métadonnées cloud
       noteData['updatedAt'] = FieldValue.serverTimestamp();
       noteData['syncedAt'] = FieldValue.serverTimestamp();
-      noteData['hasImages'] = note.imagePaths.isNotEmpty; // Juste un flag
+      noteData['hasImages'] = note.imagePaths.isNotEmpty;
       noteData['imagesCount'] = note.imagePaths.length;
 
       await _notesCollection!.doc(note.id).set(noteData);
@@ -92,24 +101,21 @@ class CloudSyncService {
     }
   }
 
-  /// Télécharge une note depuis Firestore
-  /// IMPORTANT: Les images ne sont pas téléchargées (restent en local)
+  /// Télécharge une note depuis Firestore et restaure les images
   Future<Note?> downloadNote(String noteId) async {
     if (_notesCollection == null) return null;
 
     try {
       final doc = await _notesCollection!.doc(noteId).get();
-
       if (!doc.exists) return null;
 
       final data = doc.data() as Map<String, dynamic>;
-
-      // S'assurer que imagePaths existe (vide par défaut)
-      if (!data.containsKey('imagePaths')) {
-        data['imagePaths'] = [];
-      }
-
-      return Note.fromJson(data);
+      
+      // Créer la note de base
+      Note note = Note.fromJson(data);
+      
+      // Restaurer les images si présentes
+      return await _hydrateNoteImages(note, data);
     } catch (e) {
       print('Erreur download note $noteId: $e');
       return null;
@@ -127,7 +133,11 @@ class CloudSyncService {
       for (final doc in snapshot.docs) {
         try {
           final data = doc.data() as Map<String, dynamic>;
-          notes.add(Note.fromJson(data));
+          Note note = Note.fromJson(data);
+          
+          // Hydrater les images
+          final hydratedNote = await _hydrateNoteImages(note, data);
+          notes.add(hydratedNote);
         } catch (e) {
           print('Erreur parsing note ${doc.id}: $e');
         }
@@ -138,6 +148,39 @@ class CloudSyncService {
       print('Erreur download all notes: $e');
       rethrow;
     }
+  }
+
+  /// Helper pour restaurer les images Base64 en fichiers locaux
+  Future<Note> _hydrateNoteImages(Note note, Map<String, dynamic> cloudData) async {
+    if (!cloudData.containsKey('imagesBase64')) return note;
+    
+    final List<dynamic> imagesBase64 = cloudData['imagesBase64'];
+    if (imagesBase64.isEmpty) return note;
+
+    final newLocalPaths = <String>[];
+    
+    for (String base64 in imagesBase64) {
+      try {
+        final bytes = ImageBase64Service.instance.decodeBase64ToBytes(base64);
+        if (bytes != null) {
+          // Détecter l'extension
+          String ext = 'jpg';
+          if (base64.contains('image/png')) ext = 'png';
+          else if (base64.contains('image/webp')) ext = 'webp';
+          
+          final localPath = await ImageStorageService.instance.saveImageFromBytes(bytes, ext);
+          newLocalPaths.add(localPath);
+        }
+      } catch (e) {
+        print('Erreur hydration image note ${note.id}: $e');
+      }
+    }
+
+    if (newLocalPaths.isNotEmpty) {
+      return note.copyWith(imagePaths: newLocalPaths);
+    }
+    
+    return note;
   }
 
   /// Supprime une note de Firestore
@@ -160,10 +203,15 @@ class CloudSyncService {
 
     try {
       final sparkData = spark.toJson();
-      // On garde l'imagePath tel quel car c'est un chemin local,
-      // On pourrait aussi le supprimer comme pour les notes si on veut économiser de l'espace cloud
-      // pour des chemins qui ne seront plus valides ailleurs. 
-      // Mais pour les étincelles, l'image est plus "fugace".
+      
+      // Sync image si présente
+      if (spark.imagePath != null) {
+        final base64 = await ImageBase64Service.instance.encodeImageToBase64(spark.imagePath!);
+        if (base64 != null) {
+          sparkData['imagePhotoBase64'] = base64;
+        }
+      }
+      
       sparkData.remove('imagePath'); 
 
       sparkData['updatedAt'] = FieldValue.serverTimestamp();
@@ -186,7 +234,21 @@ class CloudSyncService {
       for (final doc in snapshot.docs) {
         try {
           final data = doc.data() as Map<String, dynamic>;
-          sparks.add(Spark.fromJson(data));
+          Spark spark = Spark.fromJson(data);
+          
+          // Hydrater l'image si présente
+          if (data.containsKey('imagePhotoBase64')) {
+            final base64 = data['imagePhotoBase64'] as String;
+            final bytes = ImageBase64Service.instance.decodeBase64ToBytes(base64);
+            if (bytes != null) {
+              String ext = 'jpg';
+              if (base64.contains('image/png')) ext = 'png';
+              final localPath = await ImageStorageService.instance.saveImageFromBytes(bytes, ext);
+              spark = spark.copyWith(imagePath: localPath);
+            }
+          }
+          
+          sparks.add(spark);
         } catch (e) {
           print('Erreur parsing spark ${doc.id}: $e');
         }
@@ -240,31 +302,42 @@ class CloudSyncService {
       final allNoteIds = {...localNotesMap.keys, ...cloudNotesMap.keys};
 
       for (final noteId in allNoteIds) {
-        final localNote = localNotesMap[noteId];
-        final cloudNote = cloudNotesMap[noteId];
+        try {
+          final localNote = localNotesMap[noteId];
+          final cloudNote = cloudNotesMap[noteId];
 
-        if (localNote == null && cloudNote != null) {
-          // Note existe seulement dans le cloud → télécharger
-          await NoteService.instance.saveNote(cloudNote);
-          report.downloadedItems++;
-        } else if (localNote != null && cloudNote == null) {
-          // Note existe seulement localement → uploader
-          await uploadNote(localNote);
-          report.uploadedItems++;
-        } else if (localNote != null && cloudNote != null) {
-          // Note existe des deux côtés → comparer dates
-          if (localNote.modifiedAt.isAfter(cloudNote.modifiedAt)) {
-            // Local plus récent → uploader
-            await uploadNote(localNote);
-            report.uploadedItems++;
-          } else if (cloudNote.modifiedAt.isAfter(localNote.modifiedAt)) {
-            // Cloud plus récent → télécharger
+          if (localNote == null && cloudNote != null) {
+            // Note existe seulement dans le cloud → télécharger
             await NoteService.instance.saveNote(cloudNote);
             report.downloadedItems++;
-          } else {
-            // Identiques
-            report.unchangedItems++;
+          } else if (localNote != null && cloudNote == null) {
+            // Note existe seulement localement → uploader
+            await uploadNote(localNote);
+            report.uploadedItems++;
+          } else if (localNote != null && cloudNote != null) {
+            // Note existe des deux côtés → comparer dates
+            
+            // CAS SPÉCIAL MIGRATION : Si local a des images mais le cloud n'en a pas encore,
+            // on force l'upload même si les dates sont identiques.
+            bool cloudMissingImages = localNote.imagePaths.isNotEmpty && cloudNote.imagePaths.isEmpty;
+
+            if (localNote.modifiedAt.isAfter(cloudNote.modifiedAt) || cloudMissingImages) {
+              // Local plus récent ou images à migrer → uploader
+              await uploadNote(localNote);
+              report.uploadedItems++;
+            } else if (cloudNote.modifiedAt.isAfter(localNote.modifiedAt)) {
+              // Cloud plus récent → télécharger
+              await NoteService.instance.saveNote(cloudNote);
+              report.downloadedItems++;
+            } else {
+              // Identiques
+              report.unchangedItems++;
+            }
           }
+        } catch (e) {
+          print('Erreur sync note $noteId: $e');
+          report.failedItems++;
+          report.errorMessage = 'Certains éléments n\'ont pas pu être synchronisés (taille possiblement trop grande).';
         }
       }
 
@@ -277,25 +350,33 @@ class CloudSyncService {
       final allSparkIds = {...localSparksMap.keys, ...cloudSparksMap.keys};
 
       for (final sparkId in allSparkIds) {
-        final localSpark = localSparksMap[sparkId];
-        final cloudSpark = cloudSparksMap[sparkId];
+        try {
+          final localSpark = localSparksMap[sparkId];
+          final cloudSpark = cloudSparksMap[sparkId];
 
-        if (localSpark == null && cloudSpark != null) {
-          await SparkService.instance.saveSpark(cloudSpark, skipCloud: true);
-          report.downloadedItems++;
-        } else if (localSpark != null && cloudSpark == null) {
-          await uploadSpark(localSpark);
-          report.uploadedItems++;
-        } else if (localSpark != null && cloudSpark != null) {
-          if (localSpark.modifiedAt.isAfter(cloudSpark.modifiedAt)) {
-            await uploadSpark(localSpark);
-            report.uploadedItems++;
-          } else if (cloudSpark.modifiedAt.isAfter(localSpark.modifiedAt)) {
+          if (localSpark == null && cloudSpark != null) {
             await SparkService.instance.saveSpark(cloudSpark, skipCloud: true);
             report.downloadedItems++;
-          } else {
-            report.unchangedItems++;
+          } else if (localSpark != null && cloudSpark == null) {
+            await uploadSpark(localSpark);
+            report.uploadedItems++;
+          } else if (localSpark != null && cloudSpark != null) {
+            // CAS SPÉCIAL MIGRATION ÉTINCELLES
+            bool cloudMissingImage = localSpark.imagePath != null && cloudSpark.imagePath == null;
+
+            if (localSpark.modifiedAt.isAfter(cloudSpark.modifiedAt) || cloudMissingImage) {
+              await uploadSpark(localSpark);
+              report.uploadedItems++;
+            } else if (cloudSpark.modifiedAt.isAfter(localSpark.modifiedAt)) {
+              await SparkService.instance.saveSpark(cloudSpark, skipCloud: true);
+              report.downloadedItems++;
+            } else {
+              report.unchangedItems++;
+            }
           }
+        } catch (e) {
+          print('Erreur sync spark $sparkId: $e');
+          report.failedItems++;
         }
       }
 
@@ -357,29 +438,38 @@ class SyncReport {
   int uploadedItems = 0;
   int downloadedItems = 0;
   int unchangedItems = 0;
+  int failedItems = 0;
   String? errorMessage;
 
   String getSummary() {
-    if (!success) {
-      return 'Échec: ${errorMessage ?? "Erreur inconnue"}';
+    if (errorMessage != null && totalSynced == 0 && failedItems == 0) {
+      return 'Échec critique: $errorMessage';
     }
 
     final parts = <String>[];
 
     if (uploadedItems > 0) {
-      parts.add('⬆️ $uploadedItems uploadé(s)');
+      parts.add('⬆️ $uploadedItems envoyé(s)');
     }
 
     if (downloadedItems > 0) {
-      parts.add('⬇️ $downloadedItems téléchargé(s)');
+      parts.add('⬇️ $downloadedItems reçu(s)');
     }
 
-    if (unchangedItems > 0) {
-      parts.add('✓ $unchangedItems à jour');
+    if (failedItems > 0) {
+      parts.add('❌ $failedItems échec(s)');
     }
 
-    if (parts.isEmpty) {
-      return '✅ Tout est synchronisé';
+    if (unchangedItems > 0 && parts.isEmpty) {
+      parts.add('✓ Déjà à jour');
+    }
+
+    if (parts.isEmpty && errorMessage == null) {
+      return '✅ Synchronisé';
+    }
+    
+    if (errorMessage != null) {
+      parts.add('⚠️ Note: $errorMessage');
     }
 
     return parts.join('\n');

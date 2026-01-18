@@ -58,8 +58,6 @@ class _RichTextFieldState extends State<RichTextField> {
     } else if (!hasSelection && _showToolbar) {
       _removeToolbar();
     }
-    
-    setState(() {});
   }
 
   void _showFormattingToolbar() {
