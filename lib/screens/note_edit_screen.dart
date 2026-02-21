@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import '../models/note.dart';
+import '../models/note_mood.dart';
 import '../models/text_span_data.dart';
 import '../widgets/color_picker.dart';
 import '../widgets/image_gallery_editor.dart';
@@ -40,6 +41,8 @@ class _NoteEditScreenState extends State<NoteEditScreen> {
   late List<String> _initialImages;
   late int _initialColor;
   late bool _initialFavorite;
+  late String? _initialMood;
+  late int? _initialMoodColor;
 
   List<Spark> _availableSparks = [];
   bool _showSparks = false;
@@ -57,6 +60,8 @@ class _NoteEditScreenState extends State<NoteEditScreen> {
       imagePaths: List.from(widget.note.imagePaths),
       color: widget.note.color,
       isFavorite: widget.note.isFavorite,
+      mood: widget.note.mood,
+      moodColor: widget.note.moodColor,
     );
     _titleController = TextEditingController(text: _note.title);
     _contentController = RichTextEditingController(text: _note.content);
@@ -74,6 +79,8 @@ class _NoteEditScreenState extends State<NoteEditScreen> {
     _initialImages = List.from(widget.note.imagePaths);
     _initialColor = widget.note.color.value;
     _initialFavorite = widget.note.isFavorite;
+    _initialMood = widget.note.mood;
+    _initialMoodColor = widget.note.moodColor;
 
     // Charger les étincelles pour suggestions
     _loadSparks();
@@ -102,18 +109,14 @@ class _NoteEditScreenState extends State<NoteEditScreen> {
     final currentContent = _contentController.text.trim();
 
     // Verifier si le contenu est vide (nouvelle chronique sans contenu)
-    if (currentTitle.isEmpty &&
-        currentContent.isEmpty &&
-        _note.imagePaths.isEmpty) {
-      return false;
-    }
-
-    return currentTitle != _initialTitle ||
-        currentContent != _initialContent ||
-        _note.imagePaths.length != _initialImages.length ||
-        !_listEquals(_note.imagePaths, _initialImages) ||
-        _note.color.value != _initialColor ||
-        _note.isFavorite != _initialFavorite;
+    if (_titleController.text.trim() != _initialTitle) return true;
+    if (_contentController.text != _initialContent) return true;
+    if (!_listEquals(_note.imagePaths, _initialImages)) return true;
+    if (_note.color.value != _initialColor) return true;
+    if (_note.isFavorite != _initialFavorite) return true;
+    if (_note.mood != _initialMood) return true;
+    if (_note.moodColor != _initialMoodColor) return true;
+    return false;
   }
 
   bool _listEquals(List<String> a, List<String> b) {
@@ -273,6 +276,255 @@ class _NoteEditScreenState extends State<NoteEditScreen> {
     );
   }
 
+  void _showMoodPicker() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (_) => Container(
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
+        decoration: BoxDecoration(
+          color: isDark ? AppTheme.surfaceDark : Colors.white,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Handle
+            Container(
+              width: 40,
+              height: 4,
+              margin: const EdgeInsets.only(bottom: 16),
+              decoration: BoxDecoration(
+                color: Colors.grey.shade400,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            // Titre
+            Text(
+              'Aura de la chronique',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
+                color: isDark ? Colors.white : AppTheme.textDark,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Quelle énergie porte cette chronique ?',
+              style: TextStyle(
+                fontSize: 13,
+                color: isDark ? Colors.white54 : Colors.grey.shade600,
+              ),
+            ),
+            const SizedBox(height: 20),
+            // Grid des auras
+            GridView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 4,
+                mainAxisSpacing: 12,
+                crossAxisSpacing: 12,
+                childAspectRatio: 0.85,
+              ),
+              itemCount: NoteMood.all.length,
+              itemBuilder: (context, index) {
+                final mood = NoteMood.all[index];
+                final isSelected = _note.mood == mood.key;
+                final effectiveColor = NoteMood.getEffectiveColor(
+                  mood.key,
+                  isSelected ? _note.moodColor : null,
+                );
+
+                return GestureDetector(
+                  onTap: () {
+                    setState(() {
+                      if (_note.mood == mood.key) {
+                        // Deselect
+                        _note.mood = null;
+                        _note.moodColor = null;
+                      } else {
+                        _note.mood = mood.key;
+                        // Garder la couleur custom seulement si on re-sélectionne la même
+                        if (_note.mood != mood.key) _note.moodColor = null;
+                      }
+                    });
+                    Navigator.pop(context);
+                  },
+                  onLongPress: () {
+                    // Long press = choisir couleur custom pour cette aura
+                    Navigator.pop(context);
+                    _showCustomMoodColorPicker(mood);
+                  },
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 200),
+                    decoration: BoxDecoration(
+                      color: isSelected
+                          ? effectiveColor.withOpacity(0.2)
+                          : (isDark
+                              ? Colors.white.withOpacity(0.05)
+                              : Colors.grey.shade50),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(
+                        color: isSelected ? effectiveColor : Colors.transparent,
+                        width: 2,
+                      ),
+                      boxShadow: isSelected
+                          ? [
+                              BoxShadow(
+                                color: effectiveColor.withOpacity(0.3),
+                                blurRadius: 12,
+                                spreadRadius: 1,
+                              ),
+                            ]
+                          : null,
+                    ),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(mood.icon,
+                            size: 24,
+                            color: isSelected
+                                ? effectiveColor
+                                : (isDark
+                                    ? Colors.white60
+                                    : Colors.grey.shade500)),
+                        const SizedBox(height: 6),
+                        Text(
+                          mood.label,
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight:
+                                isSelected ? FontWeight.w700 : FontWeight.w500,
+                            color: isSelected
+                                ? effectiveColor
+                                : (isDark
+                                    ? Colors.white70
+                                    : Colors.grey.shade700),
+                          ),
+                          textAlign: TextAlign.center,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Maintenir appuyé pour personnaliser la couleur',
+              style: TextStyle(
+                fontSize: 11,
+                color: isDark ? Colors.white38 : Colors.grey.shade400,
+                fontStyle: FontStyle.italic,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showCustomMoodColorPicker(NoteMood mood) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final colors = [
+      Colors.red,
+      Colors.pink,
+      Colors.purple,
+      Colors.deepPurple,
+      Colors.indigo,
+      Colors.blue,
+      Colors.cyan,
+      Colors.teal,
+      Colors.green,
+      Colors.amber,
+      Colors.orange,
+      Colors.deepOrange,
+      Colors.brown,
+      Colors.blueGrey,
+      Colors.grey,
+      mood.defaultColor,
+    ];
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (_) => Container(
+        padding: const EdgeInsets.all(24),
+        decoration: BoxDecoration(
+          color: isDark ? AppTheme.surfaceDark : Colors.white,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 40,
+              height: 4,
+              margin: const EdgeInsets.only(bottom: 16),
+              decoration: BoxDecoration(
+                color: Colors.grey.shade400,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            Text(
+              'Couleur de l\'aura "${mood.label}"',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
+                color: isDark ? Colors.white : AppTheme.textDark,
+              ),
+            ),
+            const SizedBox(height: 20),
+            Wrap(
+              spacing: 12,
+              runSpacing: 12,
+              children: colors.map((c) {
+                final isDefault = c == mood.defaultColor;
+                return GestureDetector(
+                  onTap: () {
+                    setState(() {
+                      _note.mood = mood.key;
+                      _note.moodColor = isDefault ? null : c.value;
+                    });
+                    Navigator.pop(context);
+                  },
+                  child: Container(
+                    width: 44,
+                    height: 44,
+                    decoration: BoxDecoration(
+                      color: c,
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: isDefault ? Colors.white : Colors.transparent,
+                        width: 2,
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: c.withOpacity(0.4),
+                          blurRadius: 8,
+                        ),
+                      ],
+                    ),
+                    child: isDefault
+                        ? const Icon(Icons.auto_awesome,
+                            color: Colors.white, size: 18)
+                        : null,
+                  ),
+                );
+              }).toList(),
+            ),
+            const SizedBox(height: 16),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -308,13 +560,29 @@ class _NoteEditScreenState extends State<NoteEditScreen> {
                         ? Border.all(color: Colors.grey.shade200)
                         : null,
                     boxShadow: [
-                      BoxShadow(
-                        color: isDark
-                            ? Colors.black.withOpacity(0.3)
-                            : Colors.black.withOpacity(0.06),
-                        blurRadius: 20,
-                        offset: const Offset(0, 4),
-                      ),
+                      if (NoteMood.hasGlow(_note.mood)) ...[
+                        BoxShadow(
+                          color: NoteMood.getEffectiveColor(
+                                  _note.mood, _note.moodColor)
+                              .withOpacity(0.35),
+                          blurRadius: 24,
+                          spreadRadius: 2,
+                        ),
+                        BoxShadow(
+                          color: NoteMood.getEffectiveColor(
+                                  _note.mood, _note.moodColor)
+                              .withOpacity(0.15),
+                          blurRadius: 40,
+                          spreadRadius: 6,
+                        ),
+                      ] else
+                        BoxShadow(
+                          color: isDark
+                              ? Colors.black.withOpacity(0.3)
+                              : Colors.black.withOpacity(0.06),
+                          blurRadius: 20,
+                          offset: const Offset(0, 4),
+                        ),
                     ],
                   ),
                   child: ClipRRect(
@@ -338,36 +606,46 @@ class _NoteEditScreenState extends State<NoteEditScreen> {
                           ],
 
                           // Titre - style page
-                          EditableText(
-                            controller: _titleController,
-                            focusNode: _titleFocus,
-                            style: TextStyle(
-                              fontSize: 26,
-                              fontWeight: FontWeight.w700,
-                              color: textColor,
-                              height: 1.3,
-                            ),
-                            cursorColor: AppTheme.skyBlue,
-                            backgroundCursorColor: Colors.grey,
-                            maxLines: null,
-                            onChanged: (_) {
-                              // On ne fait plus de setState ici pour éviter de casser la composition du clavier
-                              // Les controllers gèrent déjà leur état interne
-                            },
-                          ),
-                          if (_titleController.text.isEmpty)
-                            GestureDetector(
-                              onTap: () => _titleFocus.requestFocus(),
-                              child: Text(
-                                'Titre',
+                          Stack(
+                            children: [
+                              EditableText(
+                                controller: _titleController,
+                                focusNode: _titleFocus,
                                 style: TextStyle(
                                   fontSize: 26,
                                   fontWeight: FontWeight.w700,
-                                  color: textColor.withOpacity(0.25),
+                                  color: textColor,
                                   height: 1.3,
                                 ),
+                                cursorColor: AppTheme.skyBlue,
+                                backgroundCursorColor: Colors.grey,
+                                maxLines: null,
+                                onChanged: (_) {},
                               ),
-                            ),
+                              // Placeholder via ValueListenableBuilder
+                              ValueListenableBuilder<TextEditingValue>(
+                                valueListenable: _titleController,
+                                builder: (context, value, child) {
+                                  if (value.text.isNotEmpty)
+                                    return const SizedBox.shrink();
+                                  return IgnorePointer(
+                                    child: GestureDetector(
+                                      onTap: () => _titleFocus.requestFocus(),
+                                      child: Text(
+                                        'Titre',
+                                        style: TextStyle(
+                                          fontSize: 26,
+                                          fontWeight: FontWeight.w700,
+                                          color: textColor.withOpacity(0.25),
+                                          height: 1.3,
+                                        ),
+                                      ),
+                                    ),
+                                  );
+                                },
+                              ),
+                            ],
+                          ),
 
                           const SizedBox(height: 20),
 
@@ -415,7 +693,7 @@ class _NoteEditScreenState extends State<NoteEditScreen> {
 
   Widget _buildTopBar(Color textColor, bool isDark) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 8, 16, 0),
+      padding: const EdgeInsets.fromLTRB(4, 8, 8, 0),
       child: Row(
         children: [
           // Retour
@@ -423,62 +701,81 @@ class _NoteEditScreenState extends State<NoteEditScreen> {
             onPressed: _handleBack,
             icon: Icon(Icons.arrow_back_rounded,
                 color: isDark ? AppTheme.textLight : AppTheme.textDark),
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
           ),
-          const Spacer(),
-          // Inspiration / Étincelles
-          if (_availableSparks.isNotEmpty)
-            _buildTool(Icons.lightbulb_outline_rounded,
-                () => _showInspirationSheet(isDark), isDark,
-                color: AppTheme.skyBlue),
-          const SizedBox(width: 6),
-          // Couleur
-          _buildTool(Icons.palette_outlined, _showColorPicker, isDark),
-          const SizedBox(width: 6),
-          // Image
-          _isSaving
-              ? Container(
-                  width: 40,
-                  height: 40,
-                  alignment: Alignment.center,
-                  child: SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color:
-                              isDark ? AppTheme.textLight : AppTheme.textDark)),
-                )
-              : _buildTool(Icons.image_outlined, _pickImage, isDark),
-          const SizedBox(width: 6),
-          // Favori
-          _buildTool(
-            _note.isFavorite
-                ? Icons.favorite_rounded
-                : Icons.favorite_outline_rounded,
-            () => setState(() => _note.isFavorite = !_note.isFavorite),
-            isDark,
-            color: _note.isFavorite ? AppTheme.skyBlue : null,
-          ),
-          const SizedBox(width: 12),
-          // Save
-          GestureDetector(
-            onTap: _save,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-              decoration: BoxDecoration(
-                color: AppTheme.skyBlue,
-                borderRadius: BorderRadius.circular(12),
-              ),
+          // Outils scrollables
+          Expanded(
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              reverse: true,
               child: Row(
                 mainAxisSize: MainAxisSize.min,
-                children: const [
-                  Icon(Icons.check_rounded, size: 18, color: Colors.white),
-                  SizedBox(width: 6),
-                  Text('OK',
-                      style: TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w600,
-                          fontSize: 14)),
+                children: [
+                  // Inspiration / Étincelles
+                  if (_availableSparks.isNotEmpty) ...[
+                    _buildTool(Icons.lightbulb_outline_rounded,
+                        () => _showInspirationSheet(isDark), isDark,
+                        color: AppTheme.skyBlue),
+                    const SizedBox(width: 4),
+                  ],
+                  // Aura
+                  _buildTool(
+                    _note.mood != null
+                        ? Icons.auto_awesome_rounded
+                        : Icons.auto_awesome_outlined,
+                    _showMoodPicker,
+                    isDark,
+                    color: _note.mood != null
+                        ? NoteMood.getEffectiveColor(
+                            _note.mood, _note.moodColor)
+                        : null,
+                  ),
+                  const SizedBox(width: 4),
+                  // Couleur
+                  _buildTool(Icons.palette_outlined, _showColorPicker, isDark),
+                  const SizedBox(width: 4),
+                  // Image
+                  _isSaving
+                      ? Container(
+                          width: 36,
+                          height: 36,
+                          alignment: Alignment.center,
+                          child: SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: isDark
+                                      ? AppTheme.textLight
+                                      : AppTheme.textDark)),
+                        )
+                      : _buildTool(Icons.image_outlined, _pickImage, isDark),
+                  const SizedBox(width: 4),
+                  // Favori
+                  _buildTool(
+                    _note.isFavorite
+                        ? Icons.favorite_rounded
+                        : Icons.favorite_outline_rounded,
+                    () => setState(() => _note.isFavorite = !_note.isFavorite),
+                    isDark,
+                    color: _note.isFavorite ? AppTheme.skyBlue : null,
+                  ),
+                  const SizedBox(width: 8),
+                  // Save
+                  GestureDetector(
+                    onTap: _save,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 14, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: AppTheme.skyBlue,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: const Icon(Icons.check_rounded,
+                          size: 18, color: Colors.white),
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -493,8 +790,8 @@ class _NoteEditScreenState extends State<NoteEditScreen> {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        width: 40,
-        height: 40,
+        width: 36,
+        height: 36,
         decoration: BoxDecoration(
           color: isDark
               ? Colors.white.withOpacity(0.08)
@@ -502,7 +799,7 @@ class _NoteEditScreenState extends State<NoteEditScreen> {
           borderRadius: BorderRadius.circular(10),
         ),
         child: Icon(icon,
-            size: 20,
+            size: 18,
             color: color ?? (isDark ? AppTheme.textLight : AppTheme.textDark)),
       ),
     );
@@ -676,7 +973,8 @@ class _NoteEditScreenState extends State<NoteEditScreen> {
       SnackBar(
         content: Row(
           children: [
-            Icon(Icons.auto_awesome_rounded, color: Colors.white.withOpacity(0.9), size: 20),
+            Icon(Icons.auto_awesome_rounded,
+                color: Colors.white.withOpacity(0.9), size: 20),
             const SizedBox(width: 12),
             const Expanded(
               child: Text(

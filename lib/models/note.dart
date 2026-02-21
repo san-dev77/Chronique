@@ -10,6 +10,8 @@ class Note {
   List<String> imagePaths;
   Color color;
   bool isFavorite;
+  String? mood;      // Clé de l'aura (ex: 'serene', 'dark', 'angry'...)
+  int? moodColor;    // Couleur personnalisée du halo (override de la couleur par défaut)
 
   Note({
     required this.id,
@@ -21,6 +23,8 @@ class Note {
     this.imagePaths = const [],
     this.color = Colors.white,
     this.isFavorite = false,
+    this.mood,
+    this.moodColor,
   });
 
   Map<String, dynamic> toJson() {
@@ -34,6 +38,8 @@ class Note {
       'imagePaths': imagePaths,
       'color': color.value,
       'isFavorite': isFavorite,
+      'mood': mood,
+      'moodColor': moodColor,
     };
   }
 
@@ -48,6 +54,8 @@ class Note {
       imagePaths: List<String>.from(json['imagePaths'] ?? []),
       color: Color(json['color'] ?? Colors.white.value),
       isFavorite: json['isFavorite'] ?? false,
+      mood: json['mood'],
+      moodColor: json['moodColor'],
     );
   }
 
@@ -61,6 +69,8 @@ class Note {
     List<String>? imagePaths,
     Color? color,
     bool? isFavorite,
+    String? mood,
+    int? moodColor,
   }) {
     return Note(
       id: id ?? this.id,
@@ -72,6 +82,8 @@ class Note {
       imagePaths: imagePaths ?? this.imagePaths,
       color: color ?? this.color,
       isFavorite: isFavorite ?? this.isFavorite,
+      mood: mood ?? this.mood,
+      moodColor: moodColor ?? this.moodColor,
     );
   }
 }

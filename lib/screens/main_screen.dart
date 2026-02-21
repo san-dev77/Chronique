@@ -5,6 +5,7 @@ import 'favorites_screen.dart';
 import 'memories_screen.dart';
 import 'settings_screen.dart';
 import 'shared_notes_screen.dart';
+import 'timeline_screen.dart';
 import '../services/auth_service.dart';
 import '../services/cloud_sync_service.dart';
 import '../services/connectivity_service.dart';
@@ -46,6 +47,7 @@ class _MainScreenState extends State<MainScreen> {
     SharedNotesScreen(),
     MemoriesScreen(),
     FavoritesScreen(),
+    TimelineScreen(),
     SettingsScreen()
   ];
 
@@ -133,14 +135,6 @@ class _MainScreenState extends State<MainScreen> {
                 left: 0,
                 right: 0,
                 child: _buildConnectionBanner(context),
-              ),
-            // Badge sync (Affiche seulement en cas d'erreur ou offline)
-            if (isSignedIn &&
-                (_syncStatus != SyncStatus.idle))
-              Positioned(
-                top: MediaQuery.of(context).padding.top + 10,
-                left: 16,
-                child: _buildSyncBadge(),
               ),
           ],
         ),
@@ -492,7 +486,9 @@ class _MainScreenState extends State<MainScreen> {
                   Icons.auto_awesome_rounded, 'Souvenirs', isDark, accentColor),
               _buildNavItem(3, Icons.favorite_outline_rounded,
                   Icons.favorite_rounded, 'Favoris', isDark, accentColor),
-              _buildNavItem(4, Icons.settings_outlined, Icons.settings_rounded,
+              _buildNavItem(4, Icons.menu_book_outlined,
+                  Icons.menu_book_rounded, 'Albums', isDark, accentColor),
+              _buildNavItem(5, Icons.settings_outlined, Icons.settings_rounded,
                   'Réglages', isDark, accentColor),
             ],
           ),

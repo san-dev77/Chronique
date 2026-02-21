@@ -4,11 +4,13 @@ import 'dart:io';
 import 'dart:math';
 import 'dart:async';
 import '../models/note.dart';
+import '../models/note_mood.dart';
 import '../services/note_service.dart';
 import '../theme/app_theme.dart';
 import '../utils/page_transitions.dart';
 import 'note_view_screen.dart';
 import 'note_edit_screen.dart';
+import 'stories_screen.dart';
 import '../widgets/user_avatar.dart';
 import '../services/auth_service.dart';
 
@@ -53,110 +55,192 @@ class _MemoriesScreenState extends State<MemoriesScreen> {
       notesByMonth.putIfAbsent(key, () => []).add(note);
     }
 
-    // 1. Souvenirs d'il y a 1 an
+    // ═══════════════════════════════════════════════════════════════
+    // 1. CE JOUR-LÀ — Notes créées exactement ce jour dans le passé
+    // ═══════════════════════════════════════════════════════════════
+    final onThisDay = notes.where((n) {
+      return n.createdAt.month == now.month &&
+          n.createdAt.day == now.day &&
+          n.createdAt.year != now.year;
+    }).toList();
+    if (onThisDay.isNotEmpty) {
+      collections.add(MemoryCollection(
+        title: 'Ce jour-là',
+        subtitle: 'Le ${now.day} ${_getMonthName(now.month)}, vous écriviez...',
+        notes: _selectRandomNotes(onThisDay, 5),
+        icon: Icons.today_rounded,
+        color: const Color(0xFFE040FB), // Violet vif
+      ));
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // 2. IL Y A 1 AN
+    // ═══════════════════════════════════════════════════════════════
     final oneYearAgo = DateTime(now.year - 1, now.month);
     final oneYearKey = '${oneYearAgo.year}-${oneYearAgo.month}';
     if (notesByMonth.containsKey(oneYearKey)) {
-      final yearNotes = notesByMonth[oneYearKey]!;
-      final selected = _selectRandomNotes(yearNotes, 5);
+      final selected = _selectRandomNotes(notesByMonth[oneYearKey]!, 5);
       if (selected.isNotEmpty) {
         collections.add(MemoryCollection(
           title: 'Il y a 1 an',
           subtitle: '${_getMonthName(oneYearAgo.month)} ${oneYearAgo.year}',
           notes: selected,
           icon: Icons.calendar_today_rounded,
-          color: AppTheme.skyBlue,
+          color: const Color(0xFF42A5F5), // Bleu
         ));
       }
     }
 
-    // 2. Mois dernier
+    // ═══════════════════════════════════════════════════════════════
+    // 3. LE MOIS DERNIER
+    // ═══════════════════════════════════════════════════════════════
     final lastMonth = DateTime(now.year, now.month - 1);
     final lastMonthKey = '${lastMonth.year}-${lastMonth.month}';
     if (notesByMonth.containsKey(lastMonthKey)) {
-      final monthNotes = notesByMonth[lastMonthKey]!;
-      final selected = _selectRandomNotes(monthNotes, 5);
+      final selected = _selectRandomNotes(notesByMonth[lastMonthKey]!, 5);
       if (selected.isNotEmpty) {
         collections.add(MemoryCollection(
           title: 'Le mois dernier',
           subtitle: _getMonthName(lastMonth.month),
           notes: selected,
           icon: Icons.history_rounded,
-          color: AppTheme.skyBlue,
+          color: const Color(0xFF26A69A), // Teal
         ));
       }
     }
 
-    // 3. Redécouvrez
-    final oldNotes =
-        notes.where((n) => now.difference(n.createdAt).inDays > 30).toList();
-    if (oldNotes.isNotEmpty) {
-      final randomSelection = _selectRandomNotes(oldNotes, 6);
-      if (randomSelection.isNotEmpty) {
-        collections.add(MemoryCollection(
-          title: 'Redécouvrez',
-          subtitle: 'Chroniques oubliées',
-          notes: randomSelection,
-          icon: Icons.auto_awesome_rounded,
-          color: AppTheme.skyBlue,
-        ));
-      }
-    }
-
-    // 4. Souvenirs visuels
-    final notesWithImages =
-        notes.where((n) => n.imagePaths.isNotEmpty).toList();
-    if (notesWithImages.isNotEmpty) {
-      final selected = _selectRandomNotes(notesWithImages, 5);
-      if (selected.isNotEmpty) {
-        collections.add(MemoryCollection(
-          title: 'Souvenirs visuels',
-          subtitle: 'Vos photos',
-          notes: selected,
-          icon: Icons.photo_library_rounded,
-          color: AppTheme.skyBlue,
-        ));
-      }
-    }
-
-    // 5. Favoris
-    final favoriteNotes = notes.where((n) => n.isFavorite).toList();
-    if (favoriteNotes.isNotEmpty) {
-      final selected = _selectRandomNotes(favoriteNotes, 5);
-      if (selected.isNotEmpty) {
-        collections.add(MemoryCollection(
-          title: 'Coups de cœur',
-          subtitle: 'Favoris',
-          notes: selected,
-          icon: Icons.favorite_rounded,
-          color: AppTheme.skyBlue,
-        ));
-      }
-    }
-
-    // 6. Moments intenses (notes les plus longues)
-    final longNotes = List<Note>.from(notes);
-    longNotes.sort((a, b) {
-      final aLength = a.title.length + a.content.length;
-      final bLength = b.title.length + b.content.length;
-      return bLength.compareTo(aLength);
-    });
-    final topLongNotes = longNotes
-        .take(10)
-        .where((n) => (n.title.length + n.content.length) > 100)
-        .toList();
-    if (topLongNotes.length >= 3) {
-      final selected = _selectRandomNotes(topLongNotes, 5);
+    // ═══════════════════════════════════════════════════════════════
+    // 4. CHRONIQUES DE NUIT — Notes écrites après 22h
+    // ═══════════════════════════════════════════════════════════════
+    final nightNotes = notes.where((n) =>
+        n.createdAt.hour >= 22 || n.createdAt.hour < 5).toList();
+    if (nightNotes.length >= 2) {
       collections.add(MemoryCollection(
-        title: 'Vos moments intenses',
-        subtitle: 'Chroniques les plus riches',
-        notes: selected,
-        icon: Icons.local_fire_department_rounded,
-        color: AppTheme.skyBlue,
+        title: 'Chroniques de nuit',
+        subtitle: 'Écrites entre minuit et l\'aube',
+        notes: _selectRandomNotes(nightNotes, 5),
+        icon: Icons.dark_mode_rounded,
+        color: const Color(0xFF5C6BC0), // Indigo
       ));
     }
 
-    // 7. Mois aléatoire
+    // ═══════════════════════════════════════════════════════════════
+    // 5. ÉCRITS ÉCLAIRS — Notes très courtes (< 80 chars)
+    // ═══════════════════════════════════════════════════════════════
+    final flashNotes = notes.where((n) =>
+        (n.title.length + n.content.length) > 0 &&
+        (n.title.length + n.content.length) < 80).toList();
+    if (flashNotes.length >= 3) {
+      collections.add(MemoryCollection(
+        title: 'Écrits éclairs',
+        subtitle: 'Courts mais percutants',
+        notes: _selectRandomNotes(flashNotes, 5),
+        icon: Icons.bolt_rounded,
+        color: const Color(0xFFFFB300), // Ambre
+      ));
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // 6. AURAS INTENSES — Notes avec aura active
+    // ═══════════════════════════════════════════════════════════════
+    final auraNotes = notes.where((n) => NoteMood.hasGlow(n.mood)).toList();
+    if (auraNotes.length >= 2) {
+      // Prendre la couleur de la première aura trouvée
+      final firstAura = auraNotes.first;
+      final auraColor = NoteMood.getEffectiveColor(firstAura.mood, firstAura.moodColor);
+      collections.add(MemoryCollection(
+        title: 'Auras intenses',
+        subtitle: 'Vos chroniques les plus vibrantes',
+        notes: _selectRandomNotes(auraNotes, 5),
+        icon: Icons.auto_awesome_rounded,
+        color: auraColor,
+      ));
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // 7. SOUVENIRS VISUELS — Notes avec photos
+    // ═══════════════════════════════════════════════════════════════
+    final imageNotes = notes.where((n) => n.imagePaths.isNotEmpty).toList();
+    if (imageNotes.isNotEmpty) {
+      collections.add(MemoryCollection(
+        title: 'Souvenirs visuels',
+        subtitle: '${imageNotes.length} chroniques illustrées',
+        notes: _selectRandomNotes(imageNotes, 5),
+        icon: Icons.photo_library_rounded,
+        color: const Color(0xFFEC407A), // Rose
+      ));
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // 8. COUPS DE CŒUR — Favoris
+    // ═══════════════════════════════════════════════════════════════
+    final favoriteNotes = notes.where((n) => n.isFavorite).toList();
+    if (favoriteNotes.isNotEmpty) {
+      collections.add(MemoryCollection(
+        title: 'Coups de cœur',
+        subtitle: '${favoriteNotes.length} chroniques précieuses',
+        notes: _selectRandomNotes(favoriteNotes, 5),
+        icon: Icons.favorite_rounded,
+        color: const Color(0xFFEF5350), // Rouge
+      ));
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // 9. MOMENTS INTENSES — Notes les plus longues
+    // ═══════════════════════════════════════════════════════════════
+    final longNotes = List<Note>.from(notes);
+    longNotes.sort((a, b) {
+      final aLen = a.title.length + a.content.length;
+      final bLen = b.title.length + b.content.length;
+      return bLen.compareTo(aLen);
+    });
+    final topLong = longNotes
+        .take(10)
+        .where((n) => (n.title.length + n.content.length) > 100)
+        .toList();
+    if (topLong.length >= 3) {
+      collections.add(MemoryCollection(
+        title: 'Moments intenses',
+        subtitle: 'Vos récits les plus riches',
+        notes: _selectRandomNotes(topLong, 5),
+        icon: Icons.local_fire_department_rounded,
+        color: const Color(0xFFFF7043), // Orange
+      ));
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // 10. VOTRE PREMIÈRE CHRONIQUE — Nostalgie
+    // ═══════════════════════════════════════════════════════════════
+    final sorted = List<Note>.from(notes)
+      ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+    if (sorted.isNotEmpty && now.difference(sorted.first.createdAt).inDays > 7) {
+      collections.add(MemoryCollection(
+        title: 'Votre première chronique',
+        subtitle: 'Là où tout a commencé',
+        notes: [sorted.first],
+        icon: Icons.flag_rounded,
+        color: const Color(0xFF66BB6A), // Vert
+      ));
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // 11. REDÉCOUVREZ — Chroniques oubliées (> 60 jours)
+    // ═══════════════════════════════════════════════════════════════
+    final oldNotes = notes.where((n) =>
+        now.difference(n.createdAt).inDays > 60).toList();
+    if (oldNotes.isNotEmpty) {
+      collections.add(MemoryCollection(
+        title: 'Redécouvrez',
+        subtitle: 'Chroniques oubliées',
+        notes: _selectRandomNotes(oldNotes, 6),
+        icon: Icons.explore_rounded,
+        color: const Color(0xFF7E57C2), // Violet
+      ));
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // 12. MOIS AU HASARD — Un mois aléatoire du passé
+    // ═══════════════════════════════════════════════════════════════
     final pastMonths = notesByMonth.entries
         .where((e) => e.key != '${now.year}-${now.month}')
         .toList();
@@ -172,41 +256,13 @@ class _MemoriesScreenState extends State<MemoriesScreen> {
           title: 'En ${_getMonthName(month)} $year',
           subtitle: 'Un mois au hasard',
           notes: selected,
-          icon: Icons.event_note_rounded,
-          color: AppTheme.skyBlue,
+          icon: Icons.shuffle_rounded,
+          color: const Color(0xFF29B6F6), // Bleu clair
         ));
       }
     }
 
-    // 8. Moment Surprise (Totalement aléatoire)
-    if (notes.length > 5) {
-      final randomNotes = _selectRandomNotes(notes, 4);
-      collections.add(MemoryCollection(
-        title: 'Moment Surprise',
-        subtitle: 'Une note au hasard pour vous',
-        notes: randomNotes,
-        icon: Icons.auto_awesome_rounded,
-        color: AppTheme.skyBlue,
-      ));
-    }
-
-    // 9. Par couleur
-    final colorsInNotes = notes.map((n) => n.color).toSet().toList();
-    if (colorsInNotes.isNotEmpty) {
-      final randomColor = colorsInNotes[_random.nextInt(colorsInNotes.length)];
-      final filteredByColor = notes.where((n) => n.color == randomColor).toList();
-      if (filteredByColor.length >= 2) {
-        collections.add(MemoryCollection(
-          title: 'Thème de Couleur',
-          subtitle: 'Chroniques coordonnées',
-          notes: _selectRandomNotes(filteredByColor, 5),
-          icon: Icons.palette_rounded,
-          color: randomColor,
-        ));
-      }
-    }
-
-    // Mélanger un peu l'ordre des collections pour la variété (sauf la première si elle existe)
+    // Mélanger l'ordre (garder "Ce jour-là" en priorité si présent)
     if (collections.length > 3) {
       final first = collections.removeAt(0);
       collections.shuffle(_random);
@@ -280,14 +336,15 @@ class _MemoriesScreenState extends State<MemoriesScreen> {
         ));
   }
 
-  /// Ouvre le diaporama plein écran
+  /// Ouvre les Stories plein écran (style Instagram)
   void _openSlideshow(MemoryCollection collection) {
     Navigator.push(
       context,
       PageRouteBuilder(
-        pageBuilder: (_, __, ___) => _SlideshowScreen(
-          collection: collection,
-          onNoteTap: _openNote,
+        pageBuilder: (_, __, ___) => StoriesScreen(
+          notes: collection.notes,
+          title: collection.title,
+          accentColor: collection.color,
         ),
         transitionDuration: const Duration(milliseconds: 400),
         transitionsBuilder: (_, anim, __, child) {

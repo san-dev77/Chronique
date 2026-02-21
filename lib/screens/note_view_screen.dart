@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../models/note.dart';
+import '../models/note_mood.dart';
 import '../widgets/image_gallery_editor.dart';
 import '../services/auth_service.dart';
 import '../theme/app_theme.dart';
@@ -193,6 +194,10 @@ class _NoteViewScreenState extends State<NoteViewScreen>
       statusBarIconBrightness: Brightness.light,
     ));
 
+    final hasAura = NoteMood.hasGlow(widget.note.mood);
+    final auraColor = NoteMood.getEffectiveColor(widget.note.mood, widget.note.moodColor);
+    final moodData = NoteMood.fromKey(widget.note.mood);
+
     return Scaffold(
       backgroundColor: bgColor,
       body: SafeArea(
@@ -205,6 +210,62 @@ class _NoteViewScreenState extends State<NoteViewScreen>
               Expanded(
                 child: Stack(
                   children: [
+                    // Aura ambient glow overlay
+                    if (hasAura)
+                      Positioned.fill(
+                        child: IgnorePointer(
+                          child: Container(
+                            decoration: BoxDecoration(
+                              gradient: RadialGradient(
+                                center: Alignment.topCenter,
+                                radius: 1.4,
+                                colors: [
+                                  auraColor.withOpacity(isDark ? 0.35 : 0.12),
+                                  auraColor.withOpacity(isDark ? 0.15 : 0.04),
+                                  Colors.transparent,
+                                ],
+                                stops: const [0.0, 0.4, 1.0],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    // Aura badge flottant — positionné en bas à droite
+                    if (moodData != null && hasAura)
+                      Positioned(
+                        bottom: 24,
+                        right: 16,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: auraColor.withOpacity(0.9),
+                            borderRadius: BorderRadius.circular(12),
+                            boxShadow: [
+                              BoxShadow(
+                                color: auraColor.withOpacity(0.5),
+                                blurRadius: 14,
+                                spreadRadius: 2,
+                              ),
+                            ],
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(moodData.icon, size: 14, color: Colors.white),
+                              const SizedBox(width: 6),
+                              Text(
+                                moodData.label.toUpperCase(),
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w700,
+                                  letterSpacing: 1.0,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
                     SingleChildScrollView(
                       padding: const EdgeInsets.symmetric(horizontal: 24),
                       child: Column(

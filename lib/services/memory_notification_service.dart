@@ -53,7 +53,7 @@ class MemoryNotificationService {
   static const List<String> _memoryMessages = [
     'Vous vous souvenez de cette note ?',
     'Un souvenir d\'il y a quelque temps...',
-    'Redécouvrez cette note',
+    'Redécouvrez cette chronique',
     'Ce jour-là, vous avez écrit...',
     'Un petit flashback pour vous',
     'Regardez ce que vous aviez noté',
@@ -63,6 +63,12 @@ class MemoryNotificationService {
     'Il s\'est passé quelque chose ce jour-là',
     'Un moment précieux à redécouvrir',
     'Votre carnet a de la mémoire !',
+    'Cette chronique vous rappelle quelque chose ?',
+    'Retour dans le temps...',
+    'Une page de votre histoire',
+    'Nostalgie du moment',
+    'Votre plume d\'autrefois',
+    'Ce passage mérite d\'être relu',
   ];
 
   // Getters pour les préférences
@@ -208,12 +214,13 @@ class MemoryNotificationService {
 
     final noteId = response.payload;
     if (noteId != null && noteId.isNotEmpty && noteId != 'test') {
-      // Ouvrir la note spécifique
-      if (onOpenNote != null) {
-        onOpenNote!(noteId);
-      } else {
-        // Fallback: naviguer vers la note view
-        navigatorKey.currentState?.pushNamed('/note', arguments: noteId);
+      // Action "Lire la chronique" ou tap sur la notification elle-même
+      if (response.actionId == 'read_note' || response.actionId == null || response.actionId!.isEmpty) {
+        if (onOpenNote != null) {
+          onOpenNote!(noteId);
+        } else {
+          navigatorKey.currentState?.pushNamed('/note', arguments: noteId);
+        }
       }
     }
   }
@@ -479,7 +486,7 @@ class MemoryNotificationService {
     }
   }
 
-  /// Affiche une notification locale générique
+  /// Affiche une notification locale avec bouton d'action
   Future<void> showLocalNotification({
     required int id,
     required String title,
@@ -492,7 +499,7 @@ class MemoryNotificationService {
       await init();
       if (!_isInitialized) return;
 
-      const androidDetails = AndroidNotificationDetails(
+      final androidDetails = AndroidNotificationDetails(
         _channelId,
         _channelName,
         channelDescription: _channelDesc,
@@ -500,7 +507,15 @@ class MemoryNotificationService {
         priority: Priority.max,
         playSound: true,
         enableVibration: true,
-        largeIcon: DrawableResourceAndroidBitmap('@mipmap/launcher_icon'),
+        largeIcon: const DrawableResourceAndroidBitmap('@mipmap/launcher_icon'),
+        actions: <AndroidNotificationAction>[
+          const AndroidNotificationAction(
+            'read_note',
+            'Lire la chronique',
+            showsUserInterface: true,
+            cancelNotification: true,
+          ),
+        ],
       );
 
       const iosDetails = DarwinNotificationDetails(
@@ -509,7 +524,7 @@ class MemoryNotificationService {
         presentSound: true,
       );
 
-      const details = NotificationDetails(
+      final details = NotificationDetails(
         android: androidDetails,
         iOS: iosDetails,
       );
@@ -591,7 +606,6 @@ class MemoryNotificationService {
         }
 
         // Fenêtre de tir : on n'envoie que si on est dans l'heure qui suit l'heure prévue
-        // (Pour éviter d'envoyer un souvenir à 23h si le worker a été bloqué toute la journée)
         if (currentMinutes > configMinutes + 60) {
           debugPrint('Heure passée pour aujourd\'hui ($currentMinutes > ${configMinutes + 60})');
           await prefs.setString('last_notif_reason', 'Heure dépassée pour aujourd\'hui');
@@ -613,6 +627,23 @@ class MemoryNotificationService {
         return;
       }
 
+      // === Anti-doublon : charger les IDs envoyés récemment ===
+      final sentIdsRaw = prefs.getStringList('sent_note_ids') ?? [];
+      final sentDatesRaw = prefs.getStringList('sent_note_dates') ?? [];
+      final cutoff = now.subtract(const Duration(days: 7));
+      
+      // Nettoyer les entrées > 7 jours
+      final cleanIds = <String>[];
+      final cleanDates = <String>[];
+      for (int i = 0; i < sentIdsRaw.length && i < sentDatesRaw.length; i++) {
+        final date = DateTime.tryParse(sentDatesRaw[i]);
+        if (date != null && date.isAfter(cutoff)) {
+          cleanIds.add(sentIdsRaw[i]);
+          cleanDates.add(sentDatesRaw[i]);
+        }
+      }
+      final recentlyNotifiedIds = cleanIds.toSet();
+
       final random = Random();
 
       // 1. Chercher des souvenirs spécifiques (anniversaires, etc)
@@ -623,22 +654,35 @@ class MemoryNotificationService {
 
         final periodNotes = notes.where((note) {
           final diff = now.difference(note.createdAt).inDays;
-          return diff >= days - tolerance && diff <= days + tolerance;
+          return diff >= days - tolerance && diff <= days + tolerance &&
+              !recentlyNotifiedIds.contains(note.id);
         }).toList();
 
         if (periodNotes.isNotEmpty) {
           final note = periodNotes[random.nextInt(periodNotes.length)];
           await sendMemoryNotification(note, customMessage: message);
           await prefs.setString(lastNotifKey, today);
+          // Enregistrer cet ID comme envoyé
+          cleanIds.add(note.id);
+          cleanDates.add(now.toIso8601String());
+          await prefs.setStringList('sent_note_ids', cleanIds);
+          await prefs.setStringList('sent_note_dates', cleanDates);
           return;
         }
       }
 
-      // 2. Sinon, envoyer une note aléatoire
-      final note = notes[random.nextInt(notes.length)];
+      // 2. Sinon, envoyer une note aléatoire (pas récemment notifiée)
+      final available = notes.where((n) => !recentlyNotifiedIds.contains(n.id)).toList();
+      final pool = available.isNotEmpty ? available : notes;
+      final note = pool[random.nextInt(pool.length)];
       await sendMemoryNotification(note,
-          customMessage: 'Un petit souvenir pour bien commencer la journée');
+          customMessage: _memoryMessages[random.nextInt(_memoryMessages.length)]);
       await prefs.setString(lastNotifKey, today);
+      // Enregistrer cet ID comme envoyé
+      cleanIds.add(note.id);
+      cleanDates.add(now.toIso8601String());
+      await prefs.setStringList('sent_note_ids', cleanIds);
+      await prefs.setStringList('sent_note_dates', cleanDates);
       await prefs.setString(
           'last_notif_reason', 'Souvenir envoyé (${now.hour}:${now.minute})');
     } catch (e) {
