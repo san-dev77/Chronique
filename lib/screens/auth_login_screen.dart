@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import '../utils/responsive.dart';
+import '../widgets/auth_shell.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:image_picker/image_picker.dart';
 import '../services/auth_service.dart';
@@ -128,7 +130,7 @@ class _AuthLoginScreenState extends State<AuthLoginScreen>
           children: [
             Icon(icon, size: 32, color: Theme.of(context).primaryColor),
             const SizedBox(height: 8),
-            Text(label, style: const TextStyle(fontWeight: FontWeight.w600)),
+            Text(label, style: TextStyle(fontWeight: FontWeight.w600)),
           ],
         ),
       ),
@@ -298,73 +300,35 @@ class _AuthLoginScreenState extends State<AuthLoginScreen>
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final size = MediaQuery.of(context).size;
-    final primary = theme.primaryColor;
-    final primary2 = theme.primaryColor;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final primary = AppTheme.skyBlue;
+    // L'ecran forcait le mode clair : passer d'une app sombre a un formulaire
+    // blanc puis revenir au sombre etait desagreable. Il suit le theme.
+    final textColor = isDark ? Colors.white : const Color(0xFF1A1A1A);
+    final textSecondary =
+        isDark ? AppTheme.textMutedDark : const Color(0xFF4A4A4A);
 
-    // Force Light Mode colors as requested
-    const backgroundColor = Colors.white;
-    const textColor = Color(0xFF1A1A1A);
-    const textSecondary = Color(0xFF4A4A4A);
-
-    return Scaffold(
-      body: Container(
-        height: size.height,
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              Colors.white,
-              const Color(0xFFF0F4F8), // Bleu gris très clair
-              primary.withOpacity(0.15),
-            ],
-            stops: const [0.0, 0.5, 1.0],
-          ),
-        ),
-        child: SafeArea(
-          child: FadeTransition(
-            opacity: _fadeAnimation,
-            child: SlideTransition(
-              position: _slideAnimation,
-              child: Column(
-                children: [
-                  // AppBar custom
-                  Padding(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 20, vertical: 16),
-                    child: Row(
-                      children: [
-                        Container(
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(14),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withOpacity(0.08),
-                                blurRadius: 12,
-                                offset: const Offset(0, 4),
-                              ),
-                            ],
-                          ),
-                          child: IconButton(
-                            icon: const Icon(Icons.arrow_back_rounded,
-                                color: Colors.black87),
-                            onPressed: () => Navigator.pop(context),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-
-                  // Contenu scrollable
-                  Expanded(
-                    child: SingleChildScrollView(
-                      physics: const BouncingScrollPhysics(),
-                      padding: const EdgeInsets.symmetric(horizontal: 32),
-                      child: Form(
-                        key: _formKey,
+    return AuthShell(
+      tagline: _isSignUp
+          ? 'Commencez\nvotre chronique.'
+          : 'Content de\nvous revoir.',
+      leading: AuthBackButton(
+        onTap: () {
+          // Si cet ecran est seul dans la pile — cas d'une deconnexion qui
+          // l'a videe — depiler laisserait un ecran noir.
+          if (Navigator.of(context).canPop()) {
+            Navigator.pop(context);
+          } else {
+            Navigator.pushReplacementNamed(context, '/welcome');
+          }
+        },
+      ),
+      child: FadeTransition(
+        opacity: _fadeAnimation,
+        child: SlideTransition(
+          position: _slideAnimation,
+          child: Form(
+            key: _formKey,
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
@@ -397,7 +361,7 @@ class _AuthLoginScreenState extends State<AuthLoginScreen>
                                     _isSignUp
                                         ? 'Créer un compte'
                                         : 'Bon retour !',
-                                    style: const TextStyle(
+                                    style: TextStyle(
                                       fontSize: 32,
                                       fontWeight: FontWeight.w900,
                                       color: textColor,
@@ -569,7 +533,7 @@ class _AuthLoginScreenState extends State<AuthLoginScreen>
                                 ),
                                 child: RichText(
                                   text: TextSpan(
-                                    style: const TextStyle(
+                                    style: TextStyle(
                                       fontSize: 15,
                                       fontFamily: 'Inter',
                                       color: textColor, // Explicit black
@@ -602,13 +566,7 @@ class _AuthLoginScreenState extends State<AuthLoginScreen>
                       ),
                     ),
                   ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
+                );
   }
 
   Widget _buildTextField({
@@ -647,7 +605,7 @@ class _AuthLoginScreenState extends State<AuthLoginScreen>
             : TextCapitalization.none,
         onChanged: onChanged,
         validator: validator,
-        style: const TextStyle(
+        style: TextStyle(
           fontSize: 16,
           fontWeight: FontWeight.w600,
           color: fieldTextColor,

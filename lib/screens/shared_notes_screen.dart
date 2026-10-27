@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_staggered_grid_view/flutter_staggered_grid_view.dart';
 import '../models/shared_note.dart';
 import '../services/sharing_service.dart';
 import '../services/auth_service.dart';
 import '../services/image_base64_service.dart';
 import '../theme/app_theme.dart';
+import '../utils/responsive.dart';
 import '../utils/date_formatter.dart';
 import '../widgets/user_avatar.dart';
+import '../widgets/screen_header.dart';
 import 'shared_note_view_screen.dart';
 
 /// Écran listant les chroniques partagées (reçues et envoyées)
@@ -42,11 +45,8 @@ class _SharedNotesScreenState extends State<SharedNotesScreen>
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
-    final primaryColor = AppTheme.skyBlue;
-    final bgColor = isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC);
-    final surfaceColor = isDark ? Colors.white.withOpacity(0.05) : Colors.black.withOpacity(0.03);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final bgColor = isDark ? AppTheme.bgDark : AppTheme.bgLight;
 
     if (!AuthService.instance.isSignedIn) {
       return Scaffold(
@@ -55,196 +55,164 @@ class _SharedNotesScreenState extends State<SharedNotesScreen>
       );
     }
 
-    return Scaffold(
-      backgroundColor: bgColor,
-      body: Stack(
-        children: [
-          // BACKGROUND DECORATION
-          Positioned(
-            top: -100,
-            right: -50,
-            child: Container(
-              width: 300,
-              height: 300,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                gradient: RadialGradient(
-                  colors: [
-                    primaryColor.withOpacity(isDark ? 0.12 : 0.08),
-                    primaryColor.withOpacity(0),
+    return LayoutBuilder(builder: (context, constraints) {
+      final width = constraints.maxWidth;
+      final wide = Responsive.useSidebar(width);
+
+      return Scaffold(
+        backgroundColor: bgColor,
+        body: SafeArea(
+          bottom: false,
+          child: Column(
+            children: [
+              // En mode selection, l'en-tete cede la place a une barre
+              // d'action : le nombre d'elements et le bouton Supprimer sont
+              // alors cote a cote, au lieu d'etre separes par tout l'ecran.
+              AnimatedSwitcher(
+                duration: const Duration(milliseconds: 180),
+                child: _isSelectionMode
+                    ? _buildSelectionBar(isDark, width)
+                    : _buildHeader(isDark, width),
+              ),
+              Expanded(
+                child: TabBarView(
+                  controller: _tabController,
+                  children: [
+                    _buildStreamList(_receivedNotesStream, true, isDark, width),
+                    _buildStreamList(_sentNotesStream, false, isDark, width),
                   ],
                 ),
               ),
-            ),
+              if (!wide) const SizedBox(height: 8),
+            ],
           ),
-          Positioned(
-            bottom: 100,
-            left: -100,
-            child: Container(
-              width: 400,
-              height: 400,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                gradient: RadialGradient(
-                  colors: [
-                    Colors.purple.withOpacity(isDark ? 0.08 : 0.05),
-                    Colors.purple.withOpacity(0),
-                  ],
-                ),
-              ),
-            ),
+        ),
+      );
+    });
+  }
+
+  Widget _buildHeader(bool isDark, double width) {
+    return StreamBuilder<int>(
+      key: const ValueKey('header'),
+      stream: SharingService.instance.watchUnreadReceivedNotesCount(),
+      builder: (context, snapshot) {
+        final count = snapshot.data ?? 0;
+        return ScreenHeader(
+          width: width,
+          icon: Icons.people_rounded,
+          title: 'Partage',
+          subtitle: count > 0
+              ? '$count chronique${count > 1 ? 's' : ''} non lue${count > 1 ? 's' : ''}'
+              : 'Vos échanges avec vos proches',
+          bottom: _buildTabs(isDark),
+        );
+      },
+    );
+  }
+
+  /// Bascule Reçues / Envoyées, bornee pour ne pas s'etirer sur desktop.
+  Widget _buildTabs(bool isDark) {
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 300),
+        child: Container(
+          height: 42,
+          decoration: BoxDecoration(
+            color: isDark
+                ? Colors.white.withValues(alpha: 0.05)
+                : Colors.black.withValues(alpha: 0.035),
+            borderRadius: BorderRadius.circular(12),
           ),
-
-          SafeArea(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // CUSTOM HEADER
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(24, 20, 24, 8),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Partages',
-                              style: TextStyle(
-                                fontSize: 34,
-                                fontWeight: FontWeight.w900,
-                                color: isDark ? Colors.white : const Color(0xFF1E293B),
-                                letterSpacing: -1,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            StreamBuilder<int>(
-                              stream: SharingService.instance.watchUnreadReceivedNotesCount(),
-                              builder: (context, snapshot) {
-                                final count = snapshot.data ?? 0;
-                                return Text(
-                                  count > 0 ? '$count nouvelles chroniques' : 'Vos échanges cryptés',
-                                  style: TextStyle(
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.w500,
-                                    color: count > 0 ? primaryColor : (isDark ? Colors.white38 : Colors.black38),
-                                  ),
-                                );
-                              }
-                            ),
-                          ],
-                        ),
-                      ),
-                      if (_isSelectionMode)
-                        _isDeleting
-                          ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2))
-                          : IconButton(
-                              icon: const Icon(Icons.delete_outline_rounded, color: Colors.redAccent),
-                              onPressed: _selectedNoteIds.isEmpty ? null : _deleteSelectedNotes,
-                            )
-                    ],
-                  ),
-                ),
-
-                const SizedBox(height: 16),
-
-                // GLASSMORPHIC TAB BAR
-                Container(
-                  margin: const EdgeInsets.symmetric(horizontal: 24),
-                  height: 48,
-                  decoration: BoxDecoration(
-                    color: surfaceColor,
-                    borderRadius: BorderRadius.circular(24),
-                    border: Border.all(
-                      color: isDark ? Colors.white.withOpacity(0.05) : Colors.black.withOpacity(0.02),
-                    ),
-                  ),
-                  child: TabBar(
-                    controller: _tabController,
-                    indicatorSize: TabBarIndicatorSize.tab,
-                    dividerColor: Colors.transparent,
-                    indicator: BoxDecoration(
-                      color: isDark ? Colors.white.withOpacity(0.1) : Colors.white,
-                      borderRadius: BorderRadius.circular(22),
-                      boxShadow: [
-                        if (!isDark)
-                          BoxShadow(
-                            color: Colors.black.withOpacity(0.05),
-                            blurRadius: 10,
-                            offset: const Offset(0, 4),
-                          ),
-                      ],
-                    ),
-                    labelColor: isDark ? Colors.white : const Color(0xFF1E293B),
-                    unselectedLabelColor: isDark ? Colors.white38 : Colors.black45,
-                    labelStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
-                    tabs: const [
-                      Tab(text: 'Reçues'),
-                      Tab(text: 'Envoyées'),
-                    ],
-                  ),
-                ),
-
-                const SizedBox(height: 12),
-
-                // CONTENT
-                Expanded(
-                  child: TabBarView(
-                    controller: _tabController,
-                    children: [
-                      _buildStreamList(_receivedNotesStream, true, isDark),
-                      _buildStreamList(_sentNotesStream, false, isDark),
-                    ],
-                  ),
+          child: TabBar(
+            controller: _tabController,
+            indicatorSize: TabBarIndicatorSize.tab,
+            dividerColor: Colors.transparent,
+            splashBorderRadius: BorderRadius.circular(10),
+            indicator: BoxDecoration(
+              color: AppTheme.skyBlue,
+              borderRadius: BorderRadius.circular(10),
+              boxShadow: [
+                BoxShadow(
+                  color: AppTheme.skyBlue.withValues(alpha: 0.3),
+                  blurRadius: 10,
+                  offset: const Offset(0, 3),
                 ),
               ],
             ),
+            labelColor: Colors.white,
+            unselectedLabelColor:
+                isDark ? AppTheme.textMutedDark : AppTheme.textMuted,
+            labelStyle:
+                const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+            unselectedLabelStyle:
+                const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+            tabs: const [
+              Tab(text: 'Reçues'),
+              Tab(text: 'Envoyées'),
+            ],
           ),
-          
-          // Selection Mode Close Button
-          if (_isSelectionMode)
-            Positioned(
-              bottom: 30,
-              left: 0,
-              right: 0,
-              child: Center(
-                child: GestureDetector(
-                  onTap: _exitSelectionMode,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF1E293B),
-                      borderRadius: BorderRadius.circular(30),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withOpacity(0.3),
-                          blurRadius: 20,
-                          offset: const Offset(0, 10),
-                        ),
-                      ],
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(Icons.close_rounded, color: Colors.white, size: 18),
-                        const SizedBox(width: 8),
-                        Text(
-                          'Quitter la sélection (${_selectedNoteIds.length})',
-                          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
+        ),
+      ),
+    );
+  }
+
+  /// Barre contextuelle du mode selection.
+  Widget _buildSelectionBar(bool isDark, double width) {
+    final insets = Responsive.contentInsets(width);
+    final n = _selectedNoteIds.length;
+
+    return Container(
+      key: const ValueKey('selection'),
+      padding: EdgeInsets.fromLTRB(insets.left, 14, insets.right, 14),
+      decoration: BoxDecoration(
+        color: AppTheme.skyBlue.withValues(alpha: isDark ? 0.18 : 0.10),
+        border: Border(
+          bottom: BorderSide(color: AppTheme.skyBlue.withValues(alpha: 0.35)),
+        ),
+      ),
+      child: Row(
+        children: [
+          IconButton(
+            onPressed: _exitSelectionMode,
+            icon: const Icon(Icons.close_rounded),
+            tooltip: 'Quitter la sélection',
+            color: isDark ? Colors.white : AppTheme.textDark,
+          ),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              n == 0
+                  ? 'Sélectionnez des chroniques'
+                  : '$n sélectionnée${n > 1 ? 's' : ''}',
+              style: TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w700,
+                color: isDark ? Colors.white : AppTheme.textDark,
               ),
+            ),
+          ),
+          if (_isDeleting)
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 14),
+              child: SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            )
+          else
+            _DangerButton(
+              enabled: n > 0,
+              onTap: _deleteSelectedNotes,
             ),
         ],
       ),
     );
   }
 
-  Widget _buildStreamList(
-      Stream<List<SharedNote>> stream, bool isReceived, bool isDark) {
+  Widget _buildStreamList(Stream<List<SharedNote>> stream, bool isReceived,
+      bool isDark, double width) {
     return StreamBuilder<List<SharedNote>>(
       stream: stream,
       builder: (context, snapshot) {
@@ -252,7 +220,8 @@ class _SharedNotesScreenState extends State<SharedNotesScreen>
           return const Center(child: CircularProgressIndicator());
         }
         final notes = snapshot.data ?? [];
-        return _buildNotesList(notes, isReceived: isReceived, isDark: isDark);
+        return _buildNotesList(notes,
+            isReceived: isReceived, isDark: isDark, width: width);
       },
     );
   }
@@ -295,21 +264,52 @@ class _SharedNotesScreenState extends State<SharedNotesScreen>
   }
 
   Widget _buildNotesList(List<SharedNote> notes,
-      {required bool isReceived, required bool isDark}) {
+      {required bool isReceived,
+      required bool isDark,
+      required double width}) {
     if (notes.isEmpty) {
       return _buildEmptyState(isReceived, isDark);
     }
 
-    return ListView.builder(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 80),
+    final insets = Responsive.contentInsets(width);
+    final avail = width - insets.horizontal;
+    // Deux colonnes des qu'il y a la place : une liste d'une seule colonne
+    // laissait les deux tiers de l'ecran vides sur desktop.
+    final columns = avail >= 980 ? 2 : 1;
+    final padding = EdgeInsets.fromLTRB(insets.left, 16, insets.right, 90);
+
+    if (columns == 1) {
+      return ListView.builder(
+        padding: padding,
+        physics: const BouncingScrollPhysics(),
+        itemCount: notes.length,
+        itemBuilder: (context, index) => _card(notes[index], isReceived, isDark),
+      );
+    }
+
+    // Grille a hauteurs naturelles : une carte avec reactions et images est
+    // plus haute qu'une autre, une hauteur fixe la ferait deborder.
+    return MasonryGridView.count(
+      padding: padding,
       physics: const BouncingScrollPhysics(),
+      crossAxisCount: columns,
+      crossAxisSpacing: 16,
+      mainAxisSpacing: 0,
       itemCount: notes.length,
-      itemBuilder: (context, index) {
-        final note = notes[index];
-        final isSelected = _selectedNoteIds.contains(note.id);
-        return _buildNoteCard(note,
-            isReceived: isReceived, isDark: isDark, isSelected: isSelected);
-      },
+      itemBuilder: (context, index) => _card(notes[index], isReceived, isDark),
+    );
+  }
+
+  Widget _card(SharedNote note, bool isReceived, bool isDark) {
+    return _HoverCard(
+      key: ValueKey(note.id),
+      accent: AppTheme.skyBlue,
+      child: _buildNoteCard(
+        note,
+        isReceived: isReceived,
+        isDark: isDark,
+        isSelected: _selectedNoteIds.contains(note.id),
+      ),
     );
   }
 
@@ -635,5 +635,110 @@ class _SharedNotesScreenState extends State<SharedNotesScreen>
         if (mounted) setState(() => _isDeleting = false);
       }
     }
+  }
+}
+
+/// Bouton de suppression de la barre de selection.
+class _DangerButton extends StatefulWidget {
+  final bool enabled;
+  final VoidCallback onTap;
+
+  const _DangerButton({required this.enabled, required this.onTap});
+
+  @override
+  State<_DangerButton> createState() => _DangerButtonState();
+}
+
+class _DangerButtonState extends State<_DangerButton> {
+  bool _hover = false;
+
+  @override
+  Widget build(BuildContext context) {
+    const danger = Color(0xFFD1544B);
+    final on = widget.enabled;
+
+    return MouseRegion(
+      cursor: on ? SystemMouseCursors.click : SystemMouseCursors.basic,
+      onEnter: (_) => setState(() => _hover = true),
+      onExit: (_) => setState(() => _hover = false),
+      child: GestureDetector(
+        onTap: on ? widget.onTap : null,
+        child: AnimatedOpacity(
+          duration: const Duration(milliseconds: 140),
+          opacity: on ? 1 : 0.4,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 140),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            decoration: BoxDecoration(
+              color: on && _hover
+                  ? danger
+                  : danger.withValues(alpha: 0.14),
+              borderRadius: BorderRadius.circular(11),
+              border: Border.all(color: danger.withValues(alpha: 0.5)),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.delete_outline_rounded,
+                    size: 17,
+                    color: on && _hover ? Colors.white : danger),
+                const SizedBox(width: 7),
+                Text(
+                  'Supprimer',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: on && _hover ? Colors.white : danger,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Souleve une carte de partage au survol.
+class _HoverCard extends StatefulWidget {
+  final Widget child;
+  final Color accent;
+
+  const _HoverCard({super.key, required this.child, required this.accent});
+
+  @override
+  State<_HoverCard> createState() => _HoverCardState();
+}
+
+class _HoverCardState extends State<_HoverCard> {
+  bool _hover = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) => setState(() => _hover = true),
+      onExit: (_) => setState(() => _hover = false),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        curve: Curves.easeOutCubic,
+        transform: Matrix4.identity()..translate(0.0, _hover ? -3.0 : 0.0),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(24),
+          boxShadow: _hover
+              ? [
+                  BoxShadow(
+                    color: widget.accent.withValues(alpha: 0.24),
+                    blurRadius: 24,
+                    spreadRadius: -2,
+                    offset: const Offset(0, 10),
+                  ),
+                ]
+              : null,
+        ),
+        child: widget.child,
+      ),
+    );
   }
 }

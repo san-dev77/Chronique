@@ -59,6 +59,14 @@ dependencies:
   # Layout pour grille maçonnerie
   flutter_staggered_grid_view: ^0.7.0
 
+  # Empreinte des images : un nom de fichier derive du contenu rend la
+  # synchronisation idempotente (plus de doublons a chaque passage).
+  crypto: ^3.0.0
+
+  # Redimensionnement cote Dart. image_picker ignore maxWidth/imageQuality
+  # sur Windows : sans cela, une photo d'appareil part telle quelle.
+  image: ^4.0.0
+
   # Notifications locales pour les souvenirs
   flutter_local_notifications: ^18.0.1
   

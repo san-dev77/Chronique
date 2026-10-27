@@ -1,3 +1,6 @@
+import 'dart:async';
+
+import 'package:flutter/foundation.dart';
 import 'package:hive/hive.dart';
 import '../models/note.dart';
 import 'auth_service.dart';
@@ -10,6 +13,38 @@ class NoteService {
   static Box? _notesBox;
 
   bool _autoSyncEnabled = true;
+
+  /// Liste triee gardee en memoire. getAllNotes() re-deserialisait toute la
+  /// base a chaque appel, plusieurs fois par navigation.
+  List<Note>? _cache;
+
+  /// S'incremente a chaque ecriture. Les ecrans conserves en vie par
+  /// l'IndexedStack s'y abonnent pour se rafraichir sans tout recharger.
+  final ValueNotifier<int> revision = ValueNotifier<int>(0);
+
+  /// Une note par son identifiant, sans parcourir toute la liste.
+  Note? getNoteById(String id) {
+    final raw = _notesBox?.get(id);
+    if (raw == null) return null;
+    try {
+      return Note.fromJson(Map<String, dynamic>.from(raw));
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Timer? _notifyTimer;
+
+  void _invalidate() {
+    _cache = null;
+    // Une synchronisation enregistre les notes une par une. Sans regroupement,
+    // chacune declencherait une reconstruction de la liste : on attend la fin
+    // de la rafale pour ne prevenir qu'une fois.
+    _notifyTimer?.cancel();
+    _notifyTimer = Timer(const Duration(milliseconds: 40), () {
+      revision.value++;
+    });
+  }
 
   // Verrou pour éviter les initialisations concurrentes
   Future<void>? _initOperation;
@@ -60,6 +95,7 @@ class NoteService {
 
     if (_notesBox == null || !_notesBox!.isOpen) {
       _notesBox = await Hive.openBox(boxName);
+      _invalidate();
       print('Box Hive ouverte : $boxName');
       
       // MIGRATION : Si on vient de se connecter et que la box est vide,
@@ -122,33 +158,55 @@ class NoteService {
       return [];
     }
 
+    final cached = _cache;
+    if (cached != null) return cached;
+
     final notesData = _notesBox!.values.toList();
     final notes = notesData
         .map((data) => Note.fromJson(Map<String, dynamic>.from(data)))
         .toList();
 
     // Trier par date de modification (plus récent en premier)
-    notes.sort((a, b) => b.modifiedAt.compareTo(a.modifiedAt));
+    // Tri sur createdAt : c'est la date affichee sur les cartes. Trier sur
+    // modifiedAt donnait un ordre qui ne correspondait a rien de visible.
+    notes.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    _cache = notes;
     return notes;
   }
 
-  Future<void> saveNote(Note note, {bool isNew = false}) async {
+  /// [touch] a false conserve `modifiedAt`.
+  ///
+  /// Sans cela, toute ecriture — une mise en favori, une descente depuis le
+  /// cloud — remettait la date a maintenant. Consequence : toutes les notes
+  /// affichaient « Aujourd'hui » et remontaient en tete de liste.
+  /// [syncToCloud] a false enregistre sans renvoyer au cloud.
+  ///
+  /// Indispensable depuis l'ecoute temps reel : reuploader une note qu'on
+  /// vient de recevoir declencherait une boucle sans fin, et chaque tour
+  /// reencoderait ses images en base64.
+  Future<void> saveNote(Note note,
+      {bool isNew = false, bool touch = true, bool syncToCloud = true}) async {
     if (_notesBox == null || !_notesBox!.isOpen) return;
 
     // Vérifier si c'est une nouvelle note
     final existingNote = _notesBox!.get(note.id);
     final isNewNote = isNew || existingNote == null;
 
-    note.modifiedAt = DateTime.now();
+    if (touch) note.modifiedAt = DateTime.now();
     await _notesBox!.put(note.id, note.toJson());
+    _invalidate();
 
-    // Envoyer notification si nouvelle note
-    if (isNewNote) {
+    // Envoyer notification si nouvelle note.
+    //
+    // Seulement pour une note ecrite ici : une note descendue du cloud n'est
+    // pas une creation pour cet appareil, et le service de notifications
+    // temps reel annonce deja ce qui vient d'ailleurs.
+    if (isNewNote && syncToCloud) {
       MemoryNotificationService.instance.sendNoteCreatedNotification(note);
     }
 
     // Sync auto vers le cloud si connecté
-    if (_autoSyncEnabled && AuthService.instance.isSignedIn) {
+    if (syncToCloud && _autoSyncEnabled && AuthService.instance.isSignedIn) {
       try {
         await CloudSyncService.instance.uploadNote(note);
       } catch (e) {
@@ -157,13 +215,14 @@ class NoteService {
     }
   }
 
-  Future<void> deleteNote(String id) async {
+  Future<void> deleteNote(String id, {bool syncToCloud = true}) async {
     if (_notesBox == null || !_notesBox!.isOpen) return;
 
     await _notesBox!.delete(id);
+    _invalidate();
 
     // Sync auto suppression vers le cloud si connecté
-    if (_autoSyncEnabled && AuthService.instance.isSignedIn) {
+    if (syncToCloud && _autoSyncEnabled && AuthService.instance.isSignedIn) {
       try {
         await CloudSyncService.instance.deleteNoteFromCloud(id);
       } catch (e) {
@@ -176,6 +235,7 @@ class NoteService {
     if (_notesBox == null || !_notesBox!.isOpen) return;
 
     await _notesBox!.clear();
+    _invalidate();
   }
 
   void close() {

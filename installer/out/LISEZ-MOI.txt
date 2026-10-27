@@ -1,0 +1,36 @@
+CE QU'IL Y A DANS CE DOSSIER
+============================
+
+ChroniquesSetup-1.0.0.exe   <-- C'EST CELUI-CI.
+    L'installeur Windows. Double-cliquez dessus : une fenetre d'assistant
+    s'ouvre, vous passez les etapes, et le raccourci apparait sur le Bureau.
+    25 Mo.
+
+Chroniques-1.0.0.apk
+    La version Android. A copier sur le telephone et a ouvrir depuis
+    celui-ci. 59 Mo.
+
+
+ET DANS LE DOSSIER AU-DESSUS ?
+==============================
+
+Les fichiers de `installer/` ne s'ouvrent pas, ils servent a fabriquer :
+
+Chroniques.iss          la recette de l'installeur, lue par Inno Setup.
+                        L'ouvrir affiche du code : c'est normal, ce n'est
+                        pas un programme.
+
+build_installer.ps1     compile l'application puis fabrique le .exe
+                        ci-dessus.
+
+Install-Chroniques.ps1  une installation sans assistant, en ligne de
+                        commande. Depannage uniquement : l'assistant
+                        ci-dessus fait la meme chose, en mieux.
+
+
+REFABRIQUER L'INSTALLEUR
+========================
+
+    powershell -ExecutionPolicy Bypass -File installer\build_installer.ps1
+
+Ajoutez -SkipBuild pour reutiliser la compilation existante.

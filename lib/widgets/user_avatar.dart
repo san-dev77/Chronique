@@ -1,7 +1,8 @@
+import 'dart:typed_data';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../services/image_base64_service.dart';
-import 'full_screen_image_viewer.dart';
 import '../theme/app_theme.dart';
 
 /// Un widget réutilisable pour afficher l'avatar d'un utilisateur
@@ -23,9 +24,15 @@ class UserAvatar extends StatelessWidget {
     this.radius = 20,
     this.userId,
     this.heroTag,
+    this.onTap,
   });
 
   final String? heroTag;
+
+  /// Action au clic. Par defaut, un apercu compact de la photo.
+  /// Les Reglages y branchent le choix d'une nouvelle image : sans cela, le
+  /// GestureDetector interne captait le clic et on ne pouvait plus la changer.
+  final VoidCallback? onTap;
 
   /// Cache statique pour les profils Firestore afin d'éviter les flickering au scroll
   static final Map<String, Map<String, dynamic>> _profileCache = {};
@@ -120,24 +127,99 @@ class UserAvatar extends StatelessWidget {
       );
     }
 
-    if (!hasImage) return avatar;
+    if (!hasImage) {
+      if (onTap == null) return avatar;
+      return MouseRegion(
+        cursor: SystemMouseCursors.click,
+        child: GestureDetector(onTap: onTap, child: avatar),
+      );
+    }
 
-    final tag = heroTag ?? 'avatar_${userId ?? displayName}';
+    // Le tag par defaut etait 'avatar_<uid>', donc identique pour toutes les
+    // occurrences de l'avatar de l'utilisateur courant. Depuis que les onglets
+    // vivent dans un IndexedStack, ils sont tous montes en meme temps :
+    // quatre Hero de meme tag coexistaient, ce que Flutter refuse.
+    // Un Hero ne sert qu'a animer une transition de route : on ne l'active
+    // donc que si l'appelant fournit un tag explicite, unique par nature.
+    final tag = heroTag;
 
-    return GestureDetector(
-      onTap: () => Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => FullScreenImageViewer(
-            photoBase64: photoBase64,
-            photoUrl: photoUrl,
-            tag: tag,
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        // Une vignette de 40 px n'a pas besoin d'un visualiseur plein ecran
+        // noir : un simple apercu centre suffit, et on en sort d'un clic.
+        onTap: onTap ?? () => _showPreview(context),
+        child: tag == null ? avatar : Hero(tag: tag, child: avatar),
+      ),
+    );
+  }
+
+  /// Apercu compact de la photo de profil.
+  void _showPreview(BuildContext context) {
+    Uint8List? bytes;
+    if (photoBase64 != null) {
+      bytes = ImageBase64Service.instance.decodeBase64ToBytes(photoBase64!);
+    }
+
+    Widget image;
+    if (bytes != null) {
+      image = Image.memory(bytes, fit: BoxFit.cover);
+    } else if (photoUrl != null && !photoUrl!.startsWith('http')) {
+      image = Image.file(File(photoUrl!), fit: BoxFit.cover);
+    } else if (photoUrl != null) {
+      image = Image.network(photoUrl!, fit: BoxFit.cover);
+    } else {
+      return;
+    }
+
+    showDialog(
+      context: context,
+      barrierColor: Colors.black.withValues(alpha: 0.62),
+      builder: (context) => GestureDetector(
+        onTap: () => Navigator.pop(context),
+        behavior: HitTestBehavior.opaque,
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 260,
+                height: 260,
+                clipBehavior: Clip.antiAlias,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.45),
+                      blurRadius: 40,
+                      offset: const Offset(0, 16),
+                    ),
+                  ],
+                  border: Border.all(color: Colors.white24, width: 3),
+                ),
+                child: image,
+              ),
+              const SizedBox(height: 20),
+              if (displayName.isNotEmpty)
+                Text(
+                  displayName,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 17,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              const SizedBox(height: 6),
+              Text(
+                'Cliquez pour fermer',
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.55),
+                  fontSize: 12,
+                ),
+              ),
+            ],
           ),
         ),
-      ),
-      child: Hero(
-        tag: tag,
-        child: avatar,
       ),
     );
   }

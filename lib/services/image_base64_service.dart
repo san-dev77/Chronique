@@ -70,30 +70,44 @@ class ImageBase64Service {
   }
 
   /// Décode une chaîne Base64 en bytes pour affichage
+  /// Au-dela de cette taille, on decode sans passer par le cache.
+  ///
+  /// Le cache etait indexe par la chaine base64 entiere : une photo d'un
+  /// megaoctet servait donc de cle. Chercher dedans obligeait a parcourir
+  /// tout ce megaoctet pour en calculer l'empreinte, et cent entrees
+  /// retenaient pres de cent-soixante megaoctets. Pendant la recuperation
+  /// des photos du cloud, cela suffisait a figer l'interface.
+  ///
+  /// Les petites images — avatars, vignettes — profitent encore du cache :
+  /// ce sont les seules qu'on redecode plusieurs fois.
+  static const int _cacheMaxPayload = 48 * 1024;
+
   Uint8List? decodeBase64ToBytes(String base64String) {
     if (base64String.isEmpty) return null;
-    
-    // Vérifier le cache
-    if (_decodeCache.containsKey(base64String)) {
-      return _decodeCache[base64String];
+
+    final cacheable = base64String.length <= _cacheMaxPayload;
+    if (cacheable) {
+      final cached = _decodeCache[base64String];
+      if (cached != null) return cached;
     }
 
     try {
-      // Retirer le préfixe data:image/xxx;base64, si présent
+      // Retirer le prefixe data:image/xxx;base64, si present
       String cleanBase64 = base64String;
       if (base64String.contains(',')) {
         cleanBase64 = base64String.split(',').last;
       }
-      
+
       final bytes = base64Decode(cleanBase64.trim());
-      
-      // Mettre en cache (limiter la taille si nécessaire, mais ici on garde simple)
-      if (_decodeCache.length > 100) _decodeCache.clear(); // Flush si trop gros
-      _decodeCache[base64String] = bytes;
-      
+
+      if (cacheable) {
+        if (_decodeCache.length > 60) _decodeCache.clear();
+        _decodeCache[base64String] = bytes;
+      }
+
       return bytes;
     } catch (e) {
-      print('Erreur décodage Base64: $e');
+      print('Erreur decodage Base64: $e');
       return null;
     }
   }

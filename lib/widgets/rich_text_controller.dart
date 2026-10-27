@@ -24,6 +24,7 @@ class RichTextEditingController extends TextEditingController {
 
   @override
   set value(TextEditingValue newValue) {
+    // Amélioration : éviter les reconstructions inutiles qui peuvent casser la sélection
     if (newValue.text != super.value.text) {
       _rebuildSpans(super.value, newValue);
     }
@@ -46,22 +47,20 @@ class RichTextEditingController extends TextEditingController {
       return;
     }
 
-    // Algorithme de diff par prefixe/suffixe commun
-    // Plus robuste que de se baser sur la selection car les suggestions claviers
-    // remplacent souvent la zone de composition.
+    // Amélioration : algorithme de diff plus robuste pour éviter les problèmes de sélection
+    // Utilise une approche par préfixe/suffixe commun plus stable
     
     // 1. Trouver le prefixe commun
     int prefixLen = 0;
-    while (prefixLen < oldText.length && 
-           prefixLen < newText.length && 
-           oldText[prefixLen] == newText[prefixLen]) {
+    final minLength = oldText.length < newText.length ? oldText.length : newText.length;
+    while (prefixLen < minLength && oldText[prefixLen] == newText[prefixLen]) {
       prefixLen++;
     }
 
     // 2. Trouver le suffixe commun
     int suffixLen = 0;
-    while (suffixLen < (oldText.length - prefixLen) && 
-           suffixLen < (newText.length - prefixLen) && 
+    final maxSuffixLen = minLength - prefixLen;
+    while (suffixLen < maxSuffixLen && 
            oldText[oldText.length - 1 - suffixLen] == newText[newText.length - 1 - suffixLen]) {
       suffixLen++;
     }
@@ -310,11 +309,11 @@ class RichTextEditingController extends TextEditingController {
         fontStyle: span.isItalic ? FontStyle.italic : null,
         color: span.textColor,
         backgroundColor: span.isQuote 
-            ? (span.backgroundColor ?? Colors.grey.withOpacity(0.1))
+            ? (span.backgroundColor ?? Colors.grey.withValues(alpha: 0.1))
             : span.backgroundColor,
         decoration: span.isQuote ? TextDecoration.underline : null,
         decorationStyle: TextDecorationStyle.solid,
-        decorationColor: defaultStyle.color?.withOpacity(0.3),
+        decorationColor: defaultStyle.color?.withValues(alpha: 0.3),
       );
 
       if (!hasComposing || spanEnd <= composingRegion.start || currentPos >= composingRegion.end) {

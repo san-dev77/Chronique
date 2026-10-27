@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:hive_flutter/hive_flutter.dart';
@@ -7,6 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'screens/splash_screen_clean.dart';
 import 'screens/main_screen.dart';
 import 'screens/welcome_screen.dart';
+import 'screens/memories_screen.dart' show openPeriodSlideshow;
 import 'screens/note_view_screen.dart';
 import 'screens/shared_note_view_screen.dart';
 import 'services/note_service.dart';
@@ -22,6 +24,8 @@ import 'services/cloud_sync_service.dart'; // Import manquant
 import 'services/realtime_notification_service.dart';
 import 'services/spark_service.dart';
 import 'theme/app_theme.dart';
+import 'utils/app_paths.dart';
+import 'utils/responsive.dart';
 import 'firebase_options.dart';
 
 // Key globale pour la navigation (notamment depuis les notifications)
@@ -39,9 +43,9 @@ void main() async {
     print('Firebase: $e');
   }
 
-  // Initialiser Hive
-  final appDocumentDir = await getApplicationDocumentsDirectory();
-  await Hive.initFlutter(appDocumentDir.path);
+  // Initialiser Hive (hors OneDrive sur desktop, cf. AppPaths)
+  final storageDir = await AppPaths.storageRoot();
+  await Hive.initFlutter(storageDir.path);
 
   // Initialiser le service de notes
   await NoteService.instance.initialize();
@@ -55,6 +59,19 @@ void main() async {
   // Initialiser le service de connectivité
   await ConnectivityService.instance.initialize();
 
+  // WorkManager d'abord : le service de souvenirs programme une tache des
+  // son initialisation. Dans l'autre ordre, Android refusait l'enregistrement
+  // (« You have not properly initialized the Flutter WorkManager Package »)
+  // et la notification de souvenir n'etait jamais planifiee. Sur Windows le
+  // greffon n'existe pas, l'erreur passait donc inapercue.
+  if (!AppPaths.isDesktop) {
+    try {
+      await BackgroundTaskService.instance.init();
+    } catch (e) {
+      debugPrint('Taches de fond non disponibles: $e');
+    }
+  }
+
   // Initialiser le service de notifications de souvenirs
   try {
     await MemoryNotificationService.instance.init();
@@ -64,15 +81,15 @@ void main() async {
     debugPrint('Notifications non disponibles: $e');
   }
 
-  // Initialiser les tâches de fond
-  try {
-    await BackgroundTaskService.instance.init();
-    final taskEnabled = await BackgroundTaskService.instance.isTaskEnabled();
-    if (taskEnabled) {
-      await BackgroundTaskService.instance.startMemoriesTask();
+  if (!AppPaths.isDesktop) {
+    try {
+      final taskEnabled = await BackgroundTaskService.instance.isTaskEnabled();
+      if (taskEnabled) {
+        await BackgroundTaskService.instance.startMemoriesTask();
+      }
+    } catch (e) {
+      debugPrint('Taches de fond non disponibles: $e');
     }
-  } catch (e) {
-    debugPrint('Taches de fond non disponibles: $e');
   }
 
   // Initialiser le service de couleur d'accent
@@ -118,7 +135,13 @@ class _NoteKeeperAppState extends State<NoteKeeperApp> {
 
         // Enregistrer l'utilisateur dans Firestore pour le partage
         SharingService.instance.registerCurrentUser();
-        // Optionnel : déclencher une sync auto au changement de compte
+
+        // L'écoute temps réel d'abord : elle amène les notes du cloud en une
+        // seconde, sans attendre la synchronisation complète.
+        CloudSyncService.instance.startLiveSync();
+
+        // Puis une passe complète, qui règle ce que l'écoute ne voit pas :
+        // les notes locales jamais envoyées.
         try {
           await CloudSyncService.instance.syncAll();
         } catch (e) {
@@ -127,12 +150,25 @@ class _NoteKeeperAppState extends State<NoteKeeperApp> {
       } else {
         // Arrêter l'écoute si déconnecté
         RealtimeNotificationService.instance.stopListening();
+        await CloudSyncService.instance.stopLiveSync();
       }
     });
   }
 
   void _openNote(String noteId) async {
     debugPrint('Ouverture de la note depuis notification: $noteId');
+
+    // La notification du matin ne designe pas une chronique mais une
+    // distance dans le temps : « memories:90 » ouvre le diaporama des
+    // chroniques d'il y a trois mois.
+    if (noteId.startsWith('memories:')) {
+      final days = int.tryParse(noteId.substring(9));
+      final context = navigatorKey.currentContext;
+      if (days != null && context != null) {
+        await openPeriodSlideshow(context, days);
+      }
+      return;
+    }
 
     // 1. Chercher dans les notes locales
     final notes = NoteService.instance.getAllNotes();
@@ -182,16 +218,22 @@ class _NoteKeeperAppState extends State<NoteKeeperApp> {
         final accentColor = AccentColorService.instance.accentColor;
         final themeMode = ThemeService.instance.themeMode;
 
-        // Status bar avec la couleur d'accent
-        SystemChrome.setSystemUIOverlayStyle(SystemUiOverlayStyle(
-          statusBarColor: accentColor,
-          statusBarIconBrightness: Brightness.light,
-          statusBarBrightness: Brightness.dark,
-        ));
+        // Status bar avec la couleur d'accent (sans objet sur desktop)
+        if (defaultTargetPlatform == TargetPlatform.android ||
+            defaultTargetPlatform == TargetPlatform.iOS) {
+          SystemChrome.setSystemUIOverlayStyle(SystemUiOverlayStyle(
+            statusBarColor: accentColor,
+            statusBarIconBrightness: Brightness.light,
+            statusBarBrightness: Brightness.dark,
+          ));
+        }
 
         return MaterialApp(
           navigatorKey: navigatorKey,
-          title: 'Note Box',
+          title: 'Chroniques',
+          // Defilement au glisser a la souris : sans cela une fenetre desktop
+          // ne repond qu'a la molette.
+          scrollBehavior: const AppScrollBehavior(),
           theme: AppTheme.getLightTheme(accentColor),
           darkTheme: AppTheme.getDarkTheme(accentColor),
           themeMode: themeMode,

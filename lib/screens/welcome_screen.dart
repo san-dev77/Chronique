@@ -1,258 +1,209 @@
 import 'package:flutter/material.dart';
-import '../widgets/note_logo.dart';
-import '../widgets/primary_button.dart';
+
+import '../theme/app_theme.dart';
+import '../widgets/auth_shell.dart';
 import 'auth_login_screen.dart';
 
-/// Écran d'accueil minimaliste : Connexion ou Continuer sans compte
-class WelcomeScreen extends StatefulWidget {
+/// Ecran d'accueil, avant toute connexion.
+class WelcomeScreen extends StatelessWidget {
   const WelcomeScreen({super.key});
 
-  @override
-  State<WelcomeScreen> createState() => _WelcomeScreenState();
-}
-
-class _WelcomeScreenState extends State<WelcomeScreen>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _controller;
-  late Animation<double> _fadeAnimation;
-  late Animation<Offset> _slideAnimation;
-
-  @override
-  void initState() {
-    super.initState();
-
-    _controller = AnimationController(
-      duration: const Duration(milliseconds: 800),
-      vsync: this,
-    );
-
-    _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
-      CurvedAnimation(parent: _controller, curve: Curves.easeOut),
-    );
-
-    _slideAnimation = Tween<Offset>(
-      begin: const Offset(0, 0.1),
-      end: Offset.zero,
-    ).animate(
-      CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic),
-    );
-
-    _controller.forward();
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final size = MediaQuery.of(context).size;
-
-    return Scaffold(
-      body: Container(
-        width: size.width,
-        height: size.height,
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              Colors.white,
-              Colors.grey.shade50,
-              Colors.blue.shade50.withOpacity(0.3),
-            ],
-          ),
-        ),
-        child: SafeArea(
-          child: FadeTransition(
-            opacity: _fadeAnimation,
-            child: SlideTransition(
-              position: _slideAnimation,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 32),
-                child: Column(
-                  children: [
-                    const Spacer(flex: 2),
-
-                    // Logo avec animation
-                    Hero(
-                      tag: 'app_logo',
-                      child: const NoteLogo(size: 130),
-                    ),
-
-                    const SizedBox(height: 36),
-
-                    // Titre
-                    const Text(
-                      'Chroniques',
-                      style: TextStyle(
-                        fontSize: 36,
-                        fontWeight: FontWeight.w900,
-                        color: Color(0xFF1A1A1A),
-                        letterSpacing: -0.5,
-                      ),
-                    ),
-                    const Text(
-                      'The Chronique Box',
-                      style: TextStyle(
-                        fontSize: 22,
-                        fontWeight: FontWeight.w300,
-                        color: Color(0xFF4A4A4A),
-                        letterSpacing: 1.5,
-                      ),
-                    ),
-
-                    const SizedBox(height: 12),
-
-                    // Description avec meilleur contraste
-                    Text(
-                      'Capturez vos souvenirs,\nracontez votre chronique',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 17,
-                        fontWeight: FontWeight.w500,
-                        color: Colors.grey.shade700,
-                        height: 1.6,
-                      ),
-                    ),
-
-                    const Spacer(flex: 2),
-
-                    // Features
-                    _buildFeature(
-                      Icons.cloud_sync_rounded,
-                      'Synchronisation automatique',
-                      Colors.blue,
-                    ),
-                    const SizedBox(height: 12),
-                    _buildFeature(
-                      Icons.photo_library_rounded,
-                      'Illustrez vos récits avec des images',
-                      Colors.purple,
-                    ),
-                    const SizedBox(height: 12),
-                    _buildFeature(
-                      Icons.devices_rounded,
-                      'Accessible sur tous vos appareils',
-                      Colors.green,
-                    ),
-
-                    const Spacer(flex: 2),
-
-                    // Bouton Connexion avec gradient
-                    Container(
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(16),
-                        gradient: LinearGradient(
-                          colors: [
-                            Theme.of(context).colorScheme.primary,
-                            Theme.of(context)
-                                .colorScheme
-                                .primary
-                                .withOpacity(0.8),
-                          ],
-                        ),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Theme.of(context)
-                                .colorScheme
-                                .primary
-                                .withOpacity(0.3),
-                            blurRadius: 20,
-                            offset: const Offset(0, 10),
-                          ),
-                        ],
-                      ),
-                      child: Material(
-                        color: Colors.transparent,
-                        child: InkWell(
-                          onTap: () {
-                            Navigator.pushReplacement(
-                              context,
-                              MaterialPageRoute(
-                                builder: (context) => const AuthLoginScreen(),
-                              ),
-                            );
-                          },
-                          borderRadius: BorderRadius.circular(16),
-                          child: Container(
-                            height: 56,
-                            alignment: Alignment.center,
-                            child: const Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(Icons.login_rounded,
-                                    color: Colors.white, size: 24),
-                                SizedBox(width: 12),
-                                Text(
-                                  'Se connecter',
-                                  style: TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w600,
-                                    color: Colors.white,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-
-                    const SizedBox(height: 16),
-
-                    // Bouton Inscription
-                    SecondaryButton(
-                      text: 'Créer un compte',
-                      icon: Icons.person_add_rounded,
-                      onPressed: () {
-                        Navigator.pushReplacement(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => const AuthLoginScreen(initialIsSignUp: true),
-                          ),
-                        );
-                      },
-                    ),
-
-                    const SizedBox(height: 40),
-
-                    const SizedBox(height: 32),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ),
+  void _open(BuildContext context, {required bool signUp}) {
+    // `push` et non `pushReplacement` : sans cela l'accueil se retirait de la
+    // pile, et le retour depuis l'inscription laissait un ecran noir.
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => AuthLoginScreen(initialIsSignUp: signUp),
       ),
     );
   }
 
-  Widget _buildFeature(IconData icon, String text, Color color) {
-    return Row(
-      children: [
-        Container(
-          padding: const EdgeInsets.all(10),
-          decoration: BoxDecoration(
-            color: color.withOpacity(0.1),
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Icon(icon, size: 22, color: color),
-        ),
-        const SizedBox(width: 16),
-        Expanded(
-          child: Text(
-            text,
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final accent = AppTheme.skyBlue;
+
+    return AuthShell(
+      tagline: 'Vos souvenirs\nont une mémoire.',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Marque : visible seulement quand le volet de gauche est absent.
+          LayoutBuilder(builder: (context, _) {
+            final narrow = MediaQuery.sizeOf(context).width < 940;
+            if (!narrow) return const SizedBox.shrink();
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 34),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    width: 58,
+                    height: 58,
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [
+                          accent,
+                          Color.lerp(accent, Colors.black, 0.25)!,
+                        ],
+                      ),
+                      borderRadius: BorderRadius.circular(18),
+                      boxShadow: [
+                        BoxShadow(
+                          color: accent.withValues(alpha: 0.36),
+                          blurRadius: 22,
+                          offset: const Offset(0, 8),
+                        ),
+                      ],
+                    ),
+                    child: const Icon(Icons.auto_stories_rounded,
+                        color: Colors.white, size: 29),
+                  ),
+                  const SizedBox(height: 22),
+                  Text(
+                    'Vos souvenirs\nont une mémoire.',
+                    style: TextStyle(
+                      fontSize: 30,
+                      fontWeight: FontWeight.w800,
+                      height: 1.18,
+                      letterSpacing: -0.8,
+                      color: isDark ? Colors.white : AppTheme.textDark,
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }),
+
+          Text(
+            'Commencez',
             style: TextStyle(
-              fontSize: 15,
-              fontWeight: FontWeight.w500,
-              color: Colors.grey.shade800,
+              fontSize: 24,
+              fontWeight: FontWeight.w800,
+              letterSpacing: -0.5,
+              color: isDark ? Colors.white : AppTheme.textDark,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Créez un compte pour retrouver vos chroniques sur tous vos '
+            'appareils, ou connectez-vous si vous en avez déjà un.',
+            style: TextStyle(
+              fontSize: 14.5,
+              height: 1.6,
+              color: isDark ? AppTheme.textMutedDark : AppTheme.textMuted,
+            ),
+          ),
+          const SizedBox(height: 30),
+
+          AuthPrimaryButton(
+            label: 'Créer un compte',
+            icon: Icons.person_add_rounded,
+            onTap: () => _open(context, signUp: true),
+          ),
+          const SizedBox(height: 12),
+          AuthGhostButton(
+            label: 'J\'ai déjà un compte',
+            icon: Icons.login_rounded,
+            onTap: () => _open(context, signUp: false),
+          ),
+
+          const SizedBox(height: 26),
+          Row(
+            children: [
+              Expanded(
+                child: Divider(
+                  color: (isDark ? Colors.white : Colors.black)
+                      .withValues(alpha: 0.10),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 14),
+                child: Text(
+                  'ou',
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    color:
+                        isDark ? AppTheme.textMutedDark : AppTheme.textMuted,
+                  ),
+                ),
+              ),
+              Expanded(
+                child: Divider(
+                  color: (isDark ? Colors.white : Colors.black)
+                      .withValues(alpha: 0.10),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+
+          // Utilisation sans compte : les notes restent sur l'appareil.
+          Center(
+            child: _PlainLink(
+              label: 'Continuer sans compte',
+              onTap: () => Navigator.pushReplacementNamed(context, '/main'),
+            ),
+          ),
+          const SizedBox(height: 10),
+          Center(
+            child: Text(
+              'Vos chroniques resteront sur cet appareil uniquement.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 11.5,
+                color: (isDark ? AppTheme.textMutedDark : AppTheme.textMuted)
+                    .withValues(alpha: 0.8),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PlainLink extends StatefulWidget {
+  final String label;
+  final VoidCallback onTap;
+
+  const _PlainLink({required this.label, required this.onTap});
+
+  @override
+  State<_PlainLink> createState() => _PlainLinkState();
+}
+
+class _PlainLinkState extends State<_PlainLink> {
+  bool _hover = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = AppTheme.skyBlue;
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) => setState(() => _hover = true),
+      onExit: (_) => setState(() => _hover = false),
+      child: GestureDetector(
+        onTap: widget.onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 8),
+          child: Text(
+            widget.label,
+            style: TextStyle(
+              fontSize: 13.5,
+              fontWeight: FontWeight.w700,
+              color: accent,
+              decoration:
+                  _hover ? TextDecoration.underline : TextDecoration.none,
+              decorationColor: accent,
             ),
           ),
         ),
-      ],
+      ),
     );
   }
 }

@@ -3,7 +3,7 @@ import 'rich_text_controller.dart';
 import 'formatting_toolbar.dart';
 import '../models/text_span_data.dart';
 
-/// Champ de texte enrichi avec formatage en temps réel
+/// Champ de texte enrichi avec formatage en temps réel et gestion améliorée de la sélection
 class RichTextField extends StatefulWidget {
   final RichTextEditingController controller;
   final FocusNode? focusNode;
@@ -177,6 +177,13 @@ class _RichTextFieldState extends State<RichTextField> {
         maxLines: null,
         keyboardType: TextInputType.multiline,
         textInputAction: TextInputAction.newline,
+        // Amélioration : désactiver l'autocorrection agressive qui peut causer des problèmes de sélection
+        autocorrect: false,
+        enableSuggestions: true,
+        // Amélioration : permettre une sélection plus précise
+        enableInteractiveSelection: true,
+        // Amélioration : configuration du clavier pour une meilleure expérience
+        textCapitalization: TextCapitalization.sentences,
         decoration: InputDecoration(
           border: InputBorder.none,
           focusedBorder: InputBorder.none,
@@ -185,7 +192,7 @@ class _RichTextFieldState extends State<RichTextField> {
           disabledBorder: InputBorder.none,
           hintText: (widget.controller.text.isEmpty) ? widget.placeholder : null,
           hintStyle: baseStyle.copyWith(
-            color: baseStyle.color?.withOpacity(0.3),
+            color: baseStyle.color?.withValues(alpha: 0.3),
           ),
           contentPadding: const EdgeInsets.symmetric(vertical: 20),
           isDense: false,
@@ -193,6 +200,13 @@ class _RichTextFieldState extends State<RichTextField> {
         ),
         onChanged: (value) {
           widget.onChanged?.call(value);
+        },
+        // Amélioration : gestion des gestes pour une meilleure sélection
+        onTap: () {
+          // Forcer le focus pour s'assurer que la sélection fonctionne correctement
+          if (!_focusNode.hasFocus) {
+            _focusNode.requestFocus();
+          }
         },
       ),
     );

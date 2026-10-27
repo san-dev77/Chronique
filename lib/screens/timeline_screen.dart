@@ -6,6 +6,8 @@ import '../models/note.dart';
 import '../models/note_mood.dart';
 import '../services/note_service.dart';
 import '../theme/app_theme.dart';
+import '../utils/responsive.dart';
+import '../widgets/screen_header.dart';
 import 'timeline_album_reader.dart';
 
 /// Écran Timeline — affiche une courbe chronologique avec les albums par mois.
@@ -26,6 +28,12 @@ class _TimelineScreenState extends State<TimelineScreen>
   @override
   void initState() {
     super.initState();
+    // L'ecran reste vivant dans l'IndexedStack : il doit se remettre a jour
+    // quand les chroniques changent ailleurs. Sans cette ecoute, un ecran
+    // ouvert avant la fin de la synchronisation restait vide pour toujours —
+    // c'est ce qui faisait croire que les souvenirs et les albums ne
+    // chargeaient pas.
+    NoteService.instance.revision.addListener(_onDataChanged);
     _scrollController = ScrollController();
     _entryController = AnimationController(
       vsync: this,
@@ -34,8 +42,13 @@ class _TimelineScreenState extends State<TimelineScreen>
     _loadNotes();
   }
 
+  void _onDataChanged() {
+    if (mounted) _loadNotes();
+  }
+
   @override
   void dispose() {
+    NoteService.instance.revision.removeListener(_onDataChanged);
     _scrollController.dispose();
     _entryController.dispose();
     super.dispose();
@@ -82,283 +95,181 @@ class _TimelineScreenState extends State<TimelineScreen>
 
     final albums = _getAlbums();
 
-    return Scaffold(
-      backgroundColor: isDark ? AppTheme.bgDark : AppTheme.bgLight,
-      body: SafeArea(
-        child: Column(
-          children: [
-            _buildHeader(isDark),
-            Expanded(
-              child: albums.isEmpty
-                  ? _buildEmptyState(isDark)
-                  : _buildTimeline(albums, isDark),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildHeader(bool isDark) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(24, 16, 24, 8),
-      child: Row(
-        children: [
-          Icon(Icons.menu_book_rounded, color: AppTheme.skyBlue, size: 28),
-          const SizedBox(width: 12),
-          Text(
-            'Albums',
-            style: TextStyle(
-              fontSize: 28,
-              fontWeight: FontWeight.w800,
-              color: isDark ? AppTheme.textLight : AppTheme.textDark,
-            ),
-          ),
-          const Spacer(),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-            decoration: BoxDecoration(
-              color: AppTheme.skyBlue.withOpacity(0.12),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Text(
-              '${_allNotes.length} chroniques',
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-                color: AppTheme.skyBlue,
+    return LayoutBuilder(builder: (context, constraints) {
+      final width = constraints.maxWidth;
+      return Scaffold(
+        backgroundColor: isDark ? AppTheme.bgDark : AppTheme.bgLight,
+        body: SafeArea(
+          child: Column(
+            children: [
+              ScreenHeader(
+                width: width,
+                icon: Icons.menu_book_rounded,
+                title: 'Albums',
+                subtitle: albums.isEmpty
+                    ? 'Vos chroniques se regrouperont ici par période'
+                    : '${albums.length} album${albums.length > 1 ? 's' : ''}  ·  ${_allNotes.length} chroniques',
               ),
-            ),
+              Expanded(
+                child: albums.isEmpty
+                    ? _buildEmptyState(isDark)
+                    : ContentBounds(child: _buildTimeline(albums, isDark)),
+              ),
+            ],
           ),
-        ],
-      ),
-    );
+        ),
+      );
+    });
   }
 
+  /// Albums groupes par annee.
+  ///
+  /// L'ecran presentait une frise en zigzag : les cartes alternaient de part
+  /// et d'autre d'une ligne centrale. Sur desktop, cela laissait la moitie de
+  /// la largeur vide a chaque rangee. Les mois sont desormais en grille sous
+  /// leur annee, ce qui remplit l'espace et se lit d'un coup d'oeil.
   Widget _buildTimeline(
       List<MapEntry<String, List<Note>>> albums, bool isDark) {
-    return ListView.builder(
-      controller: _scrollController,
-      padding: const EdgeInsets.fromLTRB(0, 12, 0, 100),
-      itemCount: albums.length,
-      itemBuilder: (context, index) {
-        final entry = albums[index];
-        final isLeft = index.isEven;
+    final byYear = <String, List<MapEntry<String, List<Note>>>>{};
+    for (final entry in albums) {
+      final year = entry.key.split('-').first;
+      byYear.putIfAbsent(year, () => []).add(entry);
+    }
+    final years = byYear.keys.toList()..sort((a, b) => b.compareTo(a));
 
-        return AnimatedBuilder(
-          animation: _entryController,
-          builder: (context, child) {
-            final delay = (index * 0.12).clamp(0.0, 0.8);
-            final progress = Curves.easeOutCubic.transform(
-              ((_entryController.value - delay) / (1.0 - delay)).clamp(0.0, 1.0),
-            );
-            return Transform.translate(
-              offset: Offset(isLeft ? -30 * (1 - progress) : 30 * (1 - progress), 0),
-              child: Opacity(opacity: progress, child: child),
-            );
-          },
-          child: _buildTimelineItem(entry.key, entry.value, index, isDark),
-        );
-      },
-    );
+    return LayoutBuilder(builder: (context, constraints) {
+      final width = constraints.maxWidth;
+      final insets = Responsive.contentInsets(width);
+      final avail = width - insets.horizontal;
+      final columns = avail >= 1180
+          ? 4
+          : avail >= 860
+              ? 3
+              : avail >= 560
+                  ? 2
+                  : 1;
+      const gap = 16.0;
+      final cardW = (avail - gap * (columns - 1)) / columns;
+
+      return ListView.builder(
+        controller: _scrollController,
+        padding: EdgeInsets.fromLTRB(insets.left, 20, insets.right, 100),
+        itemCount: years.length,
+        itemBuilder: (context, yi) {
+          final year = years[yi];
+          final months = byYear[year]!;
+          final total =
+              months.fold<int>(0, (sum, e) => sum + e.value.length);
+
+          return AnimatedBuilder(
+            animation: _entryController,
+            builder: (context, child) {
+              final delay = (yi * 0.14).clamp(0.0, 0.7);
+              final t = Curves.easeOutCubic.transform(
+                ((_entryController.value - delay) / (1.0 - delay))
+                    .clamp(0.0, 1.0),
+              );
+              return Transform.translate(
+                offset: Offset(0, 22 * (1 - t)),
+                child: Opacity(opacity: t, child: child),
+              );
+            },
+            child: Padding(
+              padding: EdgeInsets.only(bottom: yi == years.length - 1 ? 0 : 38),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Titre d'annee : un repere fort, avec le filet qui rappelle
+                  // la frise d'origine.
+                  Row(
+                    children: [
+                      Text(
+                        year,
+                        style: TextStyle(
+                          fontSize: 30,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: -1,
+                          color: isDark
+                              ? AppTheme.textLight
+                              : AppTheme.textDark,
+                        ),
+                      ),
+                      const SizedBox(width: 14),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 9, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: AppTheme.skyBlue.withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          '$total chronique${total > 1 ? 's' : ''}',
+                          style: TextStyle(
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w700,
+                            color: AppTheme.skyBlue,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: Container(
+                          height: 1,
+                          color: (isDark ? Colors.white : Colors.black)
+                              .withValues(alpha: 0.08),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 18),
+                  Wrap(
+                    spacing: gap,
+                    runSpacing: gap,
+                    children: months.map((entry) {
+                      return SizedBox(
+                        width: cardW,
+                        child: _albumTile(entry.key, entry.value, isDark),
+                      );
+                    }).toList(),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      );
+    });
   }
 
-  Widget _buildTimelineItem(
-      String key, List<Note> notes, int index, bool isDark) {
-    final isLeft = index.isEven;
-    final label = _monthLabel(key);
-
-    // Trouver l'image de couverture (première note avec image)
-    String? coverImage;
+  Widget _albumTile(String key, List<Note> notes, bool isDark) {
+    String? cover;
     for (final note in notes) {
       if (note.imagePaths.isNotEmpty) {
-        coverImage = note.imagePaths.first;
+        cover = note.imagePaths.first;
         break;
       }
     }
 
-    // Aura dominante
-    Color albumColor = AppTheme.skyBlue;
-    int auraCount = 0;
+    // Teinte de l'album : celle de l'aura dominante du mois.
+    Color color = AppTheme.skyBlue;
     for (final note in notes) {
       if (NoteMood.hasGlow(note.mood)) {
-        albumColor = NoteMood.getEffectiveColor(note.mood, note.moodColor);
-        auraCount++;
+        color = NoteMood.getEffectiveColor(note.mood, note.moodColor);
+        break;
       }
     }
-    if (auraCount == 0) albumColor = AppTheme.skyBlue;
 
-    final sortedNotes = List<Note>.from(notes)
+    final sorted = List<Note>.from(notes)
       ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
 
-    return IntrinsicHeight(
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Côté gauche
-          if (!isLeft) Expanded(child: Container()),
-          if (isLeft)
-            Expanded(
-              child: _buildAlbumCard(
-                  label, sortedNotes, coverImage, albumColor, isDark),
-            ),
-
-          // Ligne de timeline au centre
-          SizedBox(
-            width: 40,
-            child: Column(
-              children: [
-                // Point de la timeline
-                Container(
-                  width: 16,
-                  height: 16,
-                  decoration: BoxDecoration(
-                    color: albumColor,
-                    shape: BoxShape.circle,
-                    boxShadow: [
-                      BoxShadow(
-                        color: albumColor.withOpacity(0.5),
-                        blurRadius: 8,
-                        spreadRadius: 1,
-                      ),
-                    ],
-                  ),
-                  child: Center(
-                    child: Container(
-                      width: 6,
-                      height: 6,
-                      decoration: const BoxDecoration(
-                        color: Colors.white,
-                        shape: BoxShape.circle,
-                      ),
-                    ),
-                  ),
-                ),
-                // Ligne verticale
-                Expanded(
-                  child: Container(
-                    width: 2,
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: [
-                          albumColor.withOpacity(0.6),
-                          albumColor.withOpacity(0.1),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-
-          // Côté droit
-          if (isLeft) Expanded(child: Container()),
-          if (!isLeft)
-            Expanded(
-              child: _buildAlbumCard(
-                  label, sortedNotes, coverImage, albumColor, isDark),
-            ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildAlbumCard(String label, List<Note> notes, String? coverImage,
-      Color albumColor, bool isDark) {
-    return GestureDetector(
-      onTap: () => _openAlbum(context, label, notes, albumColor),
-      child: Container(
-        margin: const EdgeInsets.fromLTRB(8, 4, 8, 20),
-        decoration: BoxDecoration(
-          color: isDark ? AppTheme.surfaceDark : Colors.white,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: albumColor.withOpacity(isDark ? 0.3 : 0.15),
-            width: 1.5,
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: albumColor.withOpacity(isDark ? 0.2 : 0.08),
-              blurRadius: 16,
-              offset: const Offset(0, 6),
-            ),
-          ],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Image de couverture
-            if (coverImage != null && File(coverImage).existsSync())
-              ClipRRect(
-                borderRadius:
-                    const BorderRadius.vertical(top: Radius.circular(19)),
-                child: Image.file(
-                  File(coverImage),
-                  height: 100,
-                  width: double.infinity,
-                  fit: BoxFit.cover,
-                ),
-              ),
-
-            Padding(
-              padding: const EdgeInsets.all(14),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Titre du mois
-                  Text(
-                    label,
-                    style: TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w700,
-                      color: isDark ? AppTheme.textLight : AppTheme.textDark,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  // Nombre de notes
-                  Row(
-                    children: [
-                      Icon(Icons.auto_stories_outlined,
-                          size: 12, color: albumColor),
-                      const SizedBox(width: 4),
-                      Text(
-                        '${notes.length} chronique${notes.length > 1 ? 's' : ''}',
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: isDark
-                              ? AppTheme.textMutedDark
-                              : AppTheme.textMuted,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  // Aperçu des titres
-                  ...notes.take(2).map((note) => Padding(
-                        padding: const EdgeInsets.only(bottom: 2),
-                        child: Text(
-                          note.title.isNotEmpty ? note.title : 'Sans titre',
-                          style: TextStyle(
-                            fontSize: 10,
-                            color: (isDark
-                                    ? AppTheme.textMutedDark
-                                    : AppTheme.textMuted)
-                                .withOpacity(0.6),
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      )),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
+    return _AlbumTile(
+      label: _monthLabel(key).split(' ').first,
+      cover: cover,
+      count: notes.length,
+      photoCount: notes.where((n) => n.imagePaths.isNotEmpty).length,
+      color: color,
+      isDark: isDark,
+      onTap: () => _openAlbum(context, _monthLabel(key), sorted, color),
     );
   }
 
@@ -430,6 +341,227 @@ class _TimelineScreenState extends State<TimelineScreen>
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Vignette d'un mois.
+class _AlbumTile extends StatefulWidget {
+  final String label;
+  final String? cover;
+  final int count;
+  final int photoCount;
+  final Color color;
+  final bool isDark;
+  final VoidCallback onTap;
+
+  const _AlbumTile({
+    required this.label,
+    required this.cover,
+    required this.count,
+    required this.photoCount,
+    required this.color,
+    required this.isDark,
+    required this.onTap,
+  });
+
+  @override
+  State<_AlbumTile> createState() => _AlbumTileState();
+}
+
+class _AlbumTileState extends State<_AlbumTile> {
+  bool _hover = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = widget.color;
+    final hasCover =
+        widget.cover != null && File(widget.cover!).existsSync();
+    final dpr = MediaQuery.devicePixelRatioOf(context);
+
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) => setState(() => _hover = true),
+      onExit: (_) => setState(() => _hover = false),
+      child: GestureDetector(
+        onTap: widget.onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 170),
+          curve: Curves.easeOutCubic,
+          transform: Matrix4.identity()..translate(0.0, _hover ? -5.0 : 0.0),
+          height: 182,
+          clipBehavior: Clip.antiAlias,
+          decoration: BoxDecoration(
+            color: widget.isDark ? AppTheme.surfaceDark : Colors.white,
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(
+              color: color.withValues(alpha: _hover ? 0.55 : 0.16),
+              width: 1.3,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: _hover
+                    ? color.withValues(alpha: 0.30)
+                    : Colors.black.withValues(
+                        alpha: widget.isDark ? 0.28 : 0.05),
+                blurRadius: _hover ? 26 : 14,
+                offset: Offset(0, _hover ? 12 : 5),
+              ),
+            ],
+          ),
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              if (hasCover)
+                LayoutBuilder(
+                  builder: (context, c) => AnimatedScale(
+                    duration: const Duration(milliseconds: 420),
+                    curve: Curves.easeOutCubic,
+                    scale: _hover ? 1.07 : 1,
+                    child: Image.file(
+                      File(widget.cover!),
+                      fit: BoxFit.cover,
+                      cacheWidth: c.maxWidth.isFinite && c.maxWidth > 0
+                          ? (c.maxWidth * dpr).round()
+                          : null,
+                      errorBuilder: (_, __, ___) =>
+                          Container(color: color.withValues(alpha: 0.2)),
+                    ),
+                  ),
+                )
+              else
+                DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [
+                        color.withValues(alpha: widget.isDark ? 0.32 : 0.18),
+                        color.withValues(alpha: widget.isDark ? 0.10 : 0.05),
+                      ],
+                    ),
+                  ),
+                ),
+
+              // Voile : le mois reste lisible sur n'importe quelle photo.
+              Positioned.fill(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        Colors.black.withValues(alpha: hasCover ? 0.15 : 0),
+                        Colors.black.withValues(alpha: hasCover ? 0.72 : 0),
+                      ],
+                      stops: const [0.35, 1],
+                    ),
+                  ),
+                ),
+              ),
+
+              MediaQuery.withClampedTextScaling(
+                maxScaleFactor: 1.15,
+                child: Padding(
+                padding: const EdgeInsets.all(14),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Row(
+                      children: [
+                        if (widget.photoCount > 0)
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 7, vertical: 3),
+                            decoration: BoxDecoration(
+                              color: Colors.black.withValues(alpha: 0.42),
+                              borderRadius: BorderRadius.circular(7),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(Icons.photo_library_rounded,
+                                    size: 11, color: Colors.white),
+                                const SizedBox(width: 4),
+                                Text(
+                                  '${widget.photoCount}',
+                                  style: const TextStyle(
+                                    fontSize: 10.5,
+                                    fontWeight: FontWeight.w800,
+                                    color: Colors.white,
+                                    height: 1.2,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        const Spacer(),
+                        AnimatedOpacity(
+                          duration: const Duration(milliseconds: 160),
+                          opacity: _hover ? 1 : 0,
+                          child: Container(
+                            padding: const EdgeInsets.all(6),
+                            decoration: BoxDecoration(
+                              color: color,
+                              shape: BoxShape.circle,
+                              boxShadow: [
+                                BoxShadow(
+                                  color: color.withValues(alpha: 0.55),
+                                  blurRadius: 12,
+                                ),
+                              ],
+                            ),
+                            child: const Icon(Icons.arrow_forward_rounded,
+                                size: 14, color: Colors.white),
+                          ),
+                        ),
+                      ],
+                    ),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          widget.label,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: -0.4,
+                            height: 1.15,
+                            color: hasCover
+                                ? Colors.white
+                                : (widget.isDark
+                                    ? AppTheme.textLight
+                                    : AppTheme.textDark),
+                          ),
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          '${widget.count} chronique${widget.count > 1 ? 's' : ''}',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            height: 1.2,
+                            color: hasCover
+                                ? Colors.white.withValues(alpha: 0.8)
+                                : (widget.isDark
+                                    ? AppTheme.textMutedDark
+                                    : AppTheme.textMuted),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

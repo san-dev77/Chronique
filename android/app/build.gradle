@@ -36,6 +36,19 @@ android {
         multiDexEnabled true
     }
 
+    signingConfigs {
+        debug {
+            // A partir de minSdk 24, le plugin Android desactive seul la
+            // signature v1 : la v2 suffit depuis Android 7. Mais plusieurs
+            // installeurs constructeur la reclament encore et rejettent
+            // sinon l'APK comme « corrompu ». On la remet, elle ne coute
+            // qu'un repertoire META-INF.
+            enableV1Signing true
+            enableV2Signing true
+            enableV3Signing true
+        }
+    }
+
     buildTypes {
         release {
             // TODO: Add your own signing config for the release build.

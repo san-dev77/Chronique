@@ -13,11 +13,15 @@ import '../services/accent_color_service.dart';
 import '../services/theme_service.dart';
 import '../services/sharing_service.dart';
 import '../services/image_base64_service.dart';
+import '../services/image_storage_service.dart';
+import '../services/spark_service.dart';
 import '../utils/image_picker_helper.dart';
 import '../services/image_crop_service.dart';
 import 'package:image_picker/image_picker.dart';
 import '../widgets/user_avatar.dart';
 import '../theme/app_theme.dart';
+import '../utils/responsive.dart';
+import '../widgets/screen_header.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -32,6 +36,9 @@ class _SettingsScreenState extends State<SettingsScreen>
   bool _isImporting = false;
   bool _isRepairing = false;
   bool _isCleaning = false;
+
+  /// Poids du dossier d'images, une fois mesure.
+  String? _usageLabel;
   bool _isSyncing = false; // Pour la sync manuelle
   String? _firestoreName; // Nom recupere de Firestore si Auth est vide
   String? _profilePhotoBase64;
@@ -102,40 +109,87 @@ class _SettingsScreenState extends State<SettingsScreen>
 
     return DefaultTabController(
       length: 3,
-      child: Scaffold(
-        backgroundColor: isDark ? AppTheme.bgDark : AppTheme.bgLight,
-        appBar: AppBar(
-          elevation: 0,
+      child: LayoutBuilder(builder: (context, constraints) {
+        final width = constraints.maxWidth;
+        return Scaffold(
           backgroundColor: isDark ? AppTheme.bgDark : AppTheme.bgLight,
-          title: Text(
-            'Parametres',
-            style: TextStyle(
-              fontWeight: FontWeight.w800,
-              color: isDark ? Colors.white : AppTheme.textDark,
-              letterSpacing: -0.5,
+          body: SafeArea(
+            bottom: false,
+            child: Column(
+              children: [
+                // Meme grammaire d'en-tete que les autres ecrans : l'AppBar
+                // Material d'origine detonnait au milieu de l'application.
+                ScreenHeader(
+                  width: width,
+                  icon: Icons.settings_rounded,
+                  title: 'Réglages',
+                  subtitle: AuthService.instance.isSignedIn
+                      ? (AuthService.instance.userName ?? 'Votre compte')
+                      : 'Mode hors ligne',
+                  bottom: _buildTabs(isDark, accentColor),
+                ),
+                Expanded(
+                  child: TabBarView(
+                    children: [
+                      ContentBounds(
+                          maxWidth: 820, child: _buildProfileTab(isDark)),
+                      ContentBounds(
+                          maxWidth: 820, child: _buildAppearanceTab(isDark)),
+                      ContentBounds(
+                          maxWidth: 820, child: _buildMaintenanceTab(isDark)),
+                    ],
+                  ),
+                ),
+              ],
             ),
           ),
-          bottom: TabBar(
-            indicatorColor: accentColor,
-            labelColor: accentColor,
-            unselectedLabelColor: Colors.grey,
+        );
+      }),
+    );
+  }
+
+  /// Bascule des trois sections, bornee pour ne pas s'etirer.
+  Widget _buildTabs(bool isDark, Color accent) {
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 380),
+        child: Container(
+          height: 42,
+          decoration: BoxDecoration(
+            color: isDark
+                ? Colors.white.withValues(alpha: 0.05)
+                : Colors.black.withValues(alpha: 0.035),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: TabBar(
+            indicatorSize: TabBarIndicatorSize.tab,
+            dividerColor: Colors.transparent,
+            splashBorderRadius: BorderRadius.circular(10),
+            indicator: BoxDecoration(
+              color: accent,
+              borderRadius: BorderRadius.circular(10),
+              boxShadow: [
+                BoxShadow(
+                  color: accent.withValues(alpha: 0.3),
+                  blurRadius: 10,
+                  offset: const Offset(0, 3),
+                ),
+              ],
+            ),
+            labelColor: Colors.white,
+            unselectedLabelColor:
+                isDark ? AppTheme.textMutedDark : AppTheme.textMuted,
             labelStyle:
-                const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+                const TextStyle(fontWeight: FontWeight.w700, fontSize: 12.5),
+            unselectedLabelStyle:
+                const TextStyle(fontWeight: FontWeight.w600, fontSize: 12.5),
             tabs: const [
-              Tab(text: 'PROFIL', icon: Icon(Icons.person_rounded, size: 20)),
-              Tab(text: 'DESIGN', icon: Icon(Icons.palette_rounded, size: 20)),
-              Tab(
-                  text: 'OUTILS',
-                  icon: Icon(Icons.build_circle_rounded, size: 20)),
+              Tab(text: 'Profil'),
+              Tab(text: 'Apparence'),
+              Tab(text: 'Outils'),
             ],
           ),
-        ),
-        body: TabBarView(
-          children: [
-            _buildProfileTab(isDark),
-            _buildAppearanceTab(isDark),
-            _buildMaintenanceTab(isDark),
-          ],
         ),
       ),
     );
@@ -178,9 +232,7 @@ class _SettingsScreenState extends State<SettingsScreen>
           ),
           child: Column(
             children: [
-              GestureDetector(
-                onTap: _pickProfileImage,
-                child: Stack(
+              Stack(
                   children: [
                     UserAvatar(
                       displayName: AuthService.instance.userName ?? 'U',
@@ -188,10 +240,19 @@ class _SettingsScreenState extends State<SettingsScreen>
                       photoUrl: AuthService.instance.currentUser?.photoURL,
                       profileColor: _profileColor,
                       radius: 50,
+                      // Pas d'action de modification ici : le clic sert a
+                      // regarder sa photo. La pastille ci-dessous, elle, la
+                      // change — c'est deja explicite.
                     ),
                     Positioned(
                       bottom: 0,
                       right: 0,
+                      child: MouseRegion(
+                      cursor: SystemMouseCursors.click,
+                      child: GestureDetector(
+                      onTap: _pickProfileImage,
+                      child: Tooltip(
+                      message: 'Changer la photo',
                       child: Container(
                         padding: const EdgeInsets.all(4),
                         decoration: BoxDecoration(
@@ -202,10 +263,12 @@ class _SettingsScreenState extends State<SettingsScreen>
                         child: const Icon(Icons.camera_alt_rounded,
                             size: 16, color: Colors.white),
                       ),
+                      ),
+                      ),
+                      ),
                     ),
                   ],
                 ),
-              ),
               const SizedBox(height: 8),
               TextButton.icon(
                 onPressed: _pickProfileImage,
@@ -776,10 +839,10 @@ class _SettingsScreenState extends State<SettingsScreen>
         _buildActionTile(
           icon: Icons.cleaning_services_rounded,
           iconColor: Colors.grey,
-          title: 'Purge des fichiers',
-          subtitle: 'Supprimer les images orphelines',
+          title: "Libérer de l’espace",
+          subtitle: _usageLabel ?? 'Chercher les images inutilisées',
           isLoading: _isCleaning,
-          onTap: _cleanupOrphanImages,
+          onTap: _purgeOrphanImages,
         ),
       ],
     );
@@ -1083,13 +1146,104 @@ class _SettingsScreenState extends State<SettingsScreen>
     }
   }
 
-  Future<void> _cleanupOrphanImages() async {
+  /// Supprime les images qu'aucune chronique ni etincelle ne reference.
+  ///
+  /// L'ancienne synchronisation ecrivait un fichier horodate a chaque passage :
+  /// les memes photos se recopiaient indefiniment. Le nom des images derive
+  /// maintenant de leur contenu, mais les doublons deja ecrits restent sur le
+  /// disque. Ce menage les enleve — apres avoir annonce ce qu'il va effacer.
+  Future<void> _purgeOrphanImages() async {
     setState(() => _isCleaning = true);
-    final count = await ImageMigrationService.instance.cleanupOrphanImages();
-    if (mounted) {
+    try {
+      // Tout ce qui est encore utilise : les photos des chroniques et celles
+      // des etincelles. Oublier les secondes les aurait effacees.
+      final referenced = <String>{};
+      for (final note in NoteService.instance.getAllNotes()) {
+        referenced.addAll(note.imagePaths);
+      }
+      for (final spark in SparkService.instance.getAllSparks()) {
+        if (spark.imagePath != null) referenced.add(spark.imagePath!);
+      }
+
+      final total = await ImageStorageService.instance.usage();
+
+      // Garde-fou : si la base n'est pas chargée, aucune image ne paraîtrait
+      // référencée et le ménage emporterait tout. Mieux vaut ne rien faire.
+      if (referenced.isEmpty && total.files > 0) {
+        if (!mounted) return;
+        setState(() => _isCleaning = false);
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Vos chroniques ne sont pas encore chargées — '
+              'nettoyage annulé par précaution.'),
+        ));
+        return;
+      }
+
+      final found = await ImageStorageService.instance
+          .removeOrphans(referenced, dryRun: true);
+
+      if (!mounted) return;
+      setState(() {
+        _isCleaning = false;
+        _usageLabel = '${total.files} fichiers · '
+            '${ImageStorageService.formatBytes(total.bytes)}';
+      });
+
+      if (found.files == 0) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Rien à nettoyer : aucune image inutilisée.')));
+        return;
+      }
+
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text("Libérer de l’espace"),
+          content: Text(
+            '${found.files} image(s) ne sont référencées par aucune '
+            'chronique ni étincelle, pour '
+            '${ImageStorageService.formatBytes(found.bytes)}.\n\n'
+            'Le dossier contient ${total.files} fichiers '
+            '(${ImageStorageService.formatBytes(total.bytes)}).\n\n'
+            'Vos chroniques et leurs photos ne sont pas touchées. '
+            'La suppression est définitive.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Annuler'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              style: FilledButton.styleFrom(backgroundColor: Colors.redAccent),
+              child: Text('Supprimer ${found.files} fichiers'),
+            ),
+          ],
+        ),
+      );
+
+      if (confirmed != true || !mounted) return;
+
+      setState(() => _isCleaning = true);
+      final removed =
+          await ImageStorageService.instance.removeOrphans(referenced);
+      final after = await ImageStorageService.instance.usage();
+
+      if (!mounted) return;
+      setState(() {
+        _isCleaning = false;
+        _usageLabel = '${after.files} fichiers · '
+            '${ImageStorageService.formatBytes(after.bytes)}';
+      });
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('${removed.files} fichiers supprimés — '
+            '${ImageStorageService.formatBytes(removed.bytes)} libérés'),
+      ));
+    } catch (e) {
+      if (!mounted) return;
       setState(() => _isCleaning = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('$count image(s) orpheline(s) supprimee(s)')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Échec du nettoyage : $e')));
     }
   }
 

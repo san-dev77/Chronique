@@ -1,8 +1,29 @@
+import 'package:flutter/cupertino.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 class PageTransitions {
+  /// Sur iPhone, une page s'ouvre en glissant depuis la droite et se referme
+  /// en tirant depuis le bord gauche. Ce geste n'est pas un ornement : c'est
+  /// la facon dont on revient en arriere sur iOS, souvent sans regarder.
+  ///
+  /// Un `PageRouteBuilder` maison, aussi joli soit-il, ne le propose pas :
+  /// seul `CupertinoPageRoute` le porte. Nos animations restent donc pour
+  /// Android et le bureau, et iOS retrouve son geste.
+  static bool get _isApple =>
+      defaultTargetPlatform == TargetPlatform.iOS ||
+      defaultTargetPlatform == TargetPlatform.macOS;
+
   // Transition de type "slide up" pour l'ouverture des notes
   static Route<dynamic> slideUpTransition(Widget page) {
+    // Monter depuis le bas, c'est une feuille modale sur iOS : elle se
+    // referme en la tirant vers le bas, comme partout ailleurs sur l'appareil.
+    if (_isApple) {
+      return CupertinoPageRoute<dynamic>(
+        fullscreenDialog: true,
+        builder: (_) => page,
+      );
+    }
     return PageRouteBuilder(
       pageBuilder: (context, animation, secondaryAnimation) => page,
       transitionsBuilder: (context, animation, secondaryAnimation, child) {
@@ -35,6 +56,8 @@ class PageTransitions {
 
   // Transition de type "fade" pour les changements de thème
   static Route<dynamic> fadeTransition(Widget page) {
+    // Le fondu reste : il sert aux changements de theme, pas a la
+    // navigation, et aucun geste de retour n'y est attendu.
     return PageRouteBuilder(
       pageBuilder: (context, animation, secondaryAnimation) => page,
       transitionsBuilder: (context, animation, secondaryAnimation, child) {
@@ -53,6 +76,7 @@ class PageTransitions {
 
   // Transition de type "scale" pour l'édition des notes
   static Route<dynamic> scaleTransition(Widget page) {
+    if (_isApple) return CupertinoPageRoute<dynamic>(builder: (_) => page);
     return PageRouteBuilder(
       pageBuilder: (context, animation, secondaryAnimation) => page,
       transitionsBuilder: (context, animation, secondaryAnimation, child) {
@@ -86,6 +110,7 @@ class PageTransitions {
 
   // Transition de type "hero" pour les cartes de notes
   static Route<dynamic> heroTransition(Widget page, {String? tag}) {
+    if (_isApple) return CupertinoPageRoute<dynamic>(builder: (_) => page);
     return PageRouteBuilder(
       pageBuilder: (context, animation, secondaryAnimation) => page,
       transitionsBuilder: (context, animation, secondaryAnimation, child) {

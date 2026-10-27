@@ -4,11 +4,17 @@ project(note_keeper LANGUAGES CXX)
 
 # The name of the executable created for the application. Change this to change
 # the on-disk name of your application.
-set(BINARY_NAME "note_keeper")
+set(BINARY_NAME "Chroniques")
 
 # Explicitly opt in to modern CMake behaviors to avoid warnings with recent
 # versions of CMake.
 cmake_policy(VERSION 3.14...3.25)
+
+# CMake 4.x (livre avec Visual Studio 2026) refuse les cmake_minimum_required
+# inferieurs a 3.5. Le SDK C++ de Firebase, telecharge dans build/ par
+# firebase_core, declare encore VERSION 3.1. Ce plancher retabli s'applique aux
+# sous-repertoires ajoutes ensuite, dont les plugins.
+set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
 
 # Define build configuration option.
 get_property(IS_MULTICONFIG GLOBAL PROPERTY GENERATOR_IS_MULTI_CONFIG)
@@ -39,7 +45,10 @@ add_definitions(-DUNICODE -D_UNICODE)
 # of modifying this function.
 function(APPLY_STANDARD_SETTINGS TARGET)
   target_compile_features(${TARGET} PUBLIC cxx_std_17)
-  target_compile_options(${TARGET} PRIVATE /W4 /WX /wd"4100")
+  # /wd"4996" : les en-tetes du SDK C++ de Firebase utilisent strncpy et des API
+  # marquees deconseillees. Avec /WX ces avertissements deviennent des erreurs et
+  # empechent la compilation de firebase_auth et cloud_firestore.
+  target_compile_options(${TARGET} PRIVATE /W4 /WX /wd"4100" /wd"4996")
   target_compile_options(${TARGET} PRIVATE /EHsc)
   target_compile_definitions(${TARGET} PRIVATE "_HAS_EXCEPTIONS=0")
   target_compile_definitions(${TARGET} PRIVATE "$<$<CONFIG:Debug>:_DEBUG>")

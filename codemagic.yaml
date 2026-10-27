@@ -1,0 +1,88 @@
+# Compilation iOS et envoi vers TestFlight, sans Mac.
+#
+# Apple n'autorise la compilation iOS que sur macOS : impossible depuis
+# Windows. Codemagic loue des machines macOS a la demande ; son offre
+# gratuite suffit largement pour un projet personnel. Le depot est clone,
+# compile, signe et depose sur TestFlight sans qu'aucune machine ne soit a
+# installer ici.
+#
+# AVANT LE PREMIER LANCEMENT, trois choses a preparer une seule fois :
+#
+#   1. Programme Developpeur Apple (99 EUR/an). TestFlight en depend.
+#
+#   2. Dans App Store Connect > Utilisateurs et acces > Integrations, creer
+#      une cle d'API. La telecharger (.p8) et la confier a Codemagic sous le
+#      nom `app_store_credentials`. C'est elle qui signe et qui depose.
+#
+#   3. Dans la console Firebase, enregistrer une application iOS avec
+#      l'identifiant `com.mikado.chroniques`, telecharger le
+#      `GoogleService-Info.plist` et le placer dans `ios/Runner/`.
+#      Sans ce fichier, l'application se ferme au lancement.
+#
+# Ensuite : `git push`, et la version part toute seule vers TestFlight.
+
+workflows:
+  ios-testflight:
+    name: Chroniques - iOS TestFlight
+    max_build_duration: 60
+    instance_type: mac_mini_m2
+
+    integrations:
+      app_store_connect: app_store_credentials
+
+    environment:
+      flutter: stable
+      xcode: latest
+      cocoapods: default
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: com.mikado.chroniques
+      vars:
+        BUNDLE_ID: com.mikado.chroniques
+
+    scripts:
+      - name: Le fichier Firebase est-il la ?
+        script: |
+          if [ ! -f ios/Runner/GoogleService-Info.plist ]; then
+            echo "GoogleService-Info.plist manquant dans ios/Runner/."
+            echo "Telechargez-le depuis la console Firebase, pour"
+            echo "l'application iOS enregistree sous $BUNDLE_ID."
+            exit 1
+          fi
+
+      - name: Dependances
+        script: flutter pub get
+
+      - name: Analyse et tests
+        script: |
+          flutter analyze
+          flutter test
+
+      - name: Dependances natives iOS
+        script: |
+          find . -name "Podfile" -execdir pod install \;
+
+      # Le numero de version vient de TestFlight : deux envois ne peuvent pas
+      # porter le meme, et le tenir a la main se finit toujours par un refus.
+      - name: Numero de version
+        script: |
+          BUILD=$(($(app-store-connect get-latest-testflight-build-number \
+            "$APP_STORE_APPLE_ID" --quiet 2>/dev/null || echo 0) + 1))
+          echo "Compilation numero $BUILD"
+          flutter build ipa --release \
+            --build-number="$BUILD" \
+            --export-options-plist=/Users/builder/export_options.plist
+
+    artifacts:
+      - build/ios/ipa/*.ipa
+      - flutter_drive.log
+
+    publishing:
+      app_store_connect:
+        auth: integration
+        submit_to_testflight: true
+        # Les testeurs internes recoivent la version sans passer par la
+        # revue d'Apple : c'est le chemin le plus court vers son propre
+        # telephone.
+        beta_groups:
+          - Internal Testers

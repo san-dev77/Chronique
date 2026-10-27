@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import '../services/image_base64_service.dart';
@@ -65,6 +66,18 @@ class FullScreenImageViewer extends StatelessWidget {
       );
     }
     
+    if (photoUrl != null && !photoUrl!.startsWith('http')) {
+      // Les images d'une chronique sont des fichiers locaux : les passer a
+      // Image.network echouait systematiquement (« Impossible de charger »).
+      return Image.file(
+        File(photoUrl!),
+        fit: BoxFit.contain,
+        width: MediaQuery.of(context).size.width,
+        height: MediaQuery.of(context).size.height,
+        errorBuilder: (context, error, stackTrace) => _errorWidget(),
+      );
+    }
+
     if (photoUrl != null) {
       return Image.network(
         photoUrl!,

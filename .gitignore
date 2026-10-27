@@ -43,3 +43,10 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Artefacts de distribution.
+# L'APK (60 Mo) et l'installeur (26 Mo) se reconstruisent a la demande :
+# les garder dans l'historique l'alourdirait pour toujours, et GitHub
+# refuse les fichiers de plus de 100 Mo.
+/installer/out/*.apk
+/installer/out/*.exe

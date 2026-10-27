@@ -2,8 +2,11 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:workmanager/workmanager.dart';
+import 'dart:io';
 import 'dart:math';
 import '../models/note.dart';
+import '../utils/app_paths.dart';
+import 'memory_periods.dart';
 import 'note_service.dart';
 
 /// Clé de navigation globale pour la redirection depuis les notifications
@@ -22,8 +25,16 @@ class MemoryNotificationService {
   // Préférences pour les notifications
   bool _notifyOnCreate = true;
   bool _memoriesEnabled = true;
-  int _memoriesHour = 10; // Heure par défaut : 10h
+  // Le souvenir du soir, a 23 h : l'heure choisie.
+  int _memoriesHour = 23;
   int _memoriesMinute = 0;
+
+  /// Seconde notification de la journee : elle mene au diaporama d'une
+  /// periode (« il y a trois mois »). Posee le matin pour ne pas tomber en
+  /// meme temps que celle du soir.
+  bool _slideshowEnabled = true;
+  int _slideshowHour = 8;
+  int _slideshowMinute = 0;
 
   // Callback pour ouvrir une note spécifique
   void Function(String noteId)? onOpenNote;
@@ -40,15 +51,9 @@ class MemoryNotificationService {
       'Notifications lors de la creation de chroniques';
 
   // Périodes de souvenirs (en jours)
-  static const Map<int, String> memoryPeriods = {
-    14: 'Il y a deux semaines...',
-    30: 'Il y a un mois...',
-    90: 'Il y a trois mois...',
-    180: 'Il y a six mois...',
-    365: 'Il y a un an...',
-    730: 'Il y a deux ans...',
-    1095: 'Il y a trois ans...',
-  };
+  /// Conservee pour les ecrans qui l'affichent encore.
+  static Map<int, String> get memoryPeriods =>
+      {for (final p in MemoryPeriod.all) p.days: p.label};
 
   static const List<String> _memoryMessages = [
     'Vous vous souvenez de cette note ?',
@@ -76,6 +81,12 @@ class MemoryNotificationService {
   bool get memoriesEnabled => _memoriesEnabled;
   int get memoriesHour => _memoriesHour;
   int get memoriesMinute => _memoriesMinute;
+  bool get slideshowEnabled => _slideshowEnabled;
+  int get slideshowHour => _slideshowHour;
+  int get slideshowMinute => _slideshowMinute;
+  String get slideshowTimeFormatted =>
+      '${_slideshowHour.toString().padLeft(2, '0')}:'
+      '${_slideshowMinute.toString().padLeft(2, '0')}';
   String get memoriesTimeFormatted =>
       '${_memoriesHour.toString().padLeft(2, '0')}:${_memoriesMinute.toString().padLeft(2, '0')}';
 
@@ -116,6 +127,14 @@ class MemoryNotificationService {
       _isInitialized = true;
       debugPrint('MemoryNotificationService pret');
 
+      // Demander l'autorisation de notifier, une fois.
+      //
+      // Elle n'etait reclamee que par le bouton « Tester les notifications »
+      // des reglages. Sur Android 13 et au-dela, une installation neuve
+      // n'affichait donc jamais la moindre notification tant que personne
+      // n'avait trouve ce bouton.
+      await _requestPermissionOnce();
+
       // Planifier le prochain souvenir "direct"
       if (_memoriesEnabled) {
         await scheduleNextMemoryNotification();
@@ -132,8 +151,11 @@ class MemoryNotificationService {
       final prefs = await SharedPreferences.getInstance();
       _notifyOnCreate = prefs.getBool('notif_on_create') ?? true;
       _memoriesEnabled = prefs.getBool('notif_memories') ?? true;
-      _memoriesHour = prefs.getInt('notif_hour') ?? 10;
+      _memoriesHour = prefs.getInt('notif_hour') ?? 23;
       _memoriesMinute = prefs.getInt('notif_minute') ?? 0;
+      _slideshowEnabled = prefs.getBool('notif_slideshow') ?? true;
+      _slideshowHour = prefs.getInt('notif_slideshow_hour') ?? 8;
+      _slideshowMinute = prefs.getInt('notif_slideshow_minute') ?? 0;
     } catch (e) {
       debugPrint('Erreur chargement prefs: $e');
     }
@@ -147,6 +169,9 @@ class MemoryNotificationService {
       await prefs.setBool('notif_memories', _memoriesEnabled);
       await prefs.setInt('notif_hour', _memoriesHour);
       await prefs.setInt('notif_minute', _memoriesMinute);
+      await prefs.setBool('notif_slideshow', _slideshowEnabled);
+      await prefs.setInt('notif_slideshow_hour', _slideshowHour);
+      await prefs.setInt('notif_slideshow_minute', _slideshowMinute);
     } catch (e) {
       debugPrint('Erreur sauvegarde prefs: $e');
     }
@@ -160,6 +185,17 @@ class MemoryNotificationService {
 
   Future<void> setMemoriesEnabled(bool value) async {
     _memoriesEnabled = value;
+    await _savePreferences();
+  }
+
+  Future<void> setSlideshowEnabled(bool value) async {
+    _slideshowEnabled = value;
+    await _savePreferences();
+  }
+
+  Future<void> setSlideshowTime(int hour, int minute) async {
+    _slideshowHour = hour;
+    _slideshowMinute = minute;
     await _savePreferences();
   }
 
@@ -226,6 +262,22 @@ class MemoryNotificationService {
   }
 
   /// Demande les permissions de notifications
+  /// Demande l'autorisation au premier lancement, puis plus jamais.
+  ///
+  /// Un refus se respecte : le systeme ne reaffiche pas la demande, et
+  /// insister a chaque demarrage ne ferait que gener.
+  Future<void> _requestPermissionOnce() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (prefs.getBool('notif_permission_asked') ?? false) return;
+      await prefs.setBool('notif_permission_asked', true);
+      final granted = await requestPermission();
+      debugPrint('Autorisation de notifier : $granted');
+    } catch (e) {
+      debugPrint('Demande d autorisation impossible: $e');
+    }
+  }
+
   Future<bool> requestPermission() async {
     if (!_isAvailable) return false;
 
@@ -468,6 +520,10 @@ class MemoryNotificationService {
       
       debugPrint('🚀 Scheduling memory task in $delay (${scheduledDate})');
 
+      // Pas de WorkManager sur desktop : la planification y echouerait a
+      // chaque demarrage, pour une erreur qui ne veut rien dire ici.
+      if (AppPaths.isDesktop) return;
+
       await Workmanager().registerOneOffTask(
         'notebox_memories_oneoff_task',
         'notebox_memories_oneoff_task',
@@ -487,17 +543,40 @@ class MemoryNotificationService {
   }
 
   /// Affiche une notification locale avec bouton d'action
+  /// [bigText] deplie la notification sur le texte de la chronique.
+  /// [imagePath] y pose une photo, pour la notification du matin.
   Future<void> showLocalNotification({
     required int id,
     required String title,
     required String body,
     String? payload,
+    String? bigText,
+    String? imagePath,
   }) async {
     if (!_isAvailable) return;
 
     try {
       await init();
       if (!_isInitialized) return;
+
+      // Une notification repliee ne montre qu'une ligne. Depliee, elle porte
+      // soit la photo du souvenir, soit le texte de la chronique — de quoi
+      // decider si on a envie de la rouvrir sans quitter l'ecran de veille.
+      StyleInformation? style;
+      if (imagePath != null && await File(imagePath).exists()) {
+        style = BigPictureStyleInformation(
+          FilePathAndroidBitmap(imagePath),
+          contentTitle: title,
+          summaryText: body,
+          hideExpandedLargeIcon: true,
+        );
+      } else if (bigText != null && bigText.trim().isNotEmpty) {
+        style = BigTextStyleInformation(
+          bigText.trim(),
+          contentTitle: title,
+          summaryText: body,
+        );
+      }
 
       final androidDetails = AndroidNotificationDetails(
         _channelId,
@@ -508,6 +587,7 @@ class MemoryNotificationService {
         playSound: true,
         enableVibration: true,
         largeIcon: const DrawableResourceAndroidBitmap('@mipmap/launcher_icon'),
+        styleInformation: style,
         actions: <AndroidNotificationAction>[
           const AndroidNotificationAction(
             'read_note',
@@ -548,16 +628,40 @@ class MemoryNotificationService {
     final message = customMessage ??
         _memoryMessages[random.nextInt(_memoryMessages.length)];
 
+    final heading = note.title.trim().isNotEmpty
+        ? note.title.trim()
+        : (note.quote?.trim().isNotEmpty ?? false)
+            ? note.quote!.trim()
+            : 'Une chronique à relire';
+
+    // Le corps de la chronique accompagne le titre : deplier la notification
+    // suffit alors a retrouver le souvenir, sans ouvrir l'application.
+    final excerpt = _excerpt(note);
+
     await showLocalNotification(
       id: note.id.hashCode,
       title: message,
-      body: note.title.isNotEmpty
-          ? note.title
-          : (note.content.length > 50
-              ? '${note.content.substring(0, 50)}...'
-              : note.content),
+      body: heading,
       payload: note.id,
+      bigText: excerpt.isEmpty ? null : '$heading\n\n$excerpt',
     );
+  }
+
+  /// Un extrait lisible de la chronique, cite d'abord, texte ensuite.
+  String _excerpt(Note note, {int max = 320}) {
+    final parts = <String>[];
+    final quote = note.quote?.trim() ?? '';
+    final content = note.content.trim();
+    if (quote.isNotEmpty && quote != note.title.trim()) {
+      parts.add('« $quote »');
+    }
+    if (content.isNotEmpty) parts.add(content);
+
+    var text = parts.join('\n\n');
+    if (text.length > max) {
+      text = '${text.substring(0, max).trimRight()}…';
+    }
+    return text;
   }
 
   /// Envoie une notification de note aléatoire (demandé par l'utilisateur)
@@ -582,43 +686,106 @@ class MemoryNotificationService {
     }
   }
 
-  /// Vérifie si c'est l'heure d'envoyer la notification
+  /// L'heure est-elle venue, et n'a-t-on pas deja envoye aujourd'hui ?
+  ///
+  /// L'ancienne version refusait d'envoyer passe une heure apres l'horaire
+  /// prevu. Android ne reveille pas une tache de fond a la minute demandee :
+  /// la fenetre etait ratee la plupart du temps, et le journal se remplissait
+  /// de « Heure dépassée pour aujourd'hui ». On envoie desormais au premier
+  /// reveil qui suit l'horaire, ce qui est tard de quelques minutes mais
+  /// jamais perdu.
+  Future<bool> _isDue(
+      SharedPreferences prefs, String key, int hour, int minute) async {
+    final now = DateTime.now();
+    final today = '${now.year}-${now.month}-${now.day}';
+    if (prefs.getString(key) == today) return false;
+    return now.hour * 60 + now.minute >= hour * 60 + minute;
+  }
+
+  Future<void> _markSent(SharedPreferences prefs, String key) async {
+    final now = DateTime.now();
+    await prefs.setString(key, '${now.year}-${now.month}-${now.day}');
+  }
+
+  /// Les chroniques deja mises en avant ces sept derniers jours.
+  Future<Set<String>> _recentlySent(SharedPreferences prefs) async {
+    final ids = prefs.getStringList('sent_note_ids') ?? [];
+    final dates = prefs.getStringList('sent_note_dates') ?? [];
+    final cutoff = DateTime.now().subtract(const Duration(days: 7));
+    final keep = <String>{};
+    final cleanIds = <String>[];
+    final cleanDates = <String>[];
+    for (var i = 0; i < ids.length && i < dates.length; i++) {
+      final date = DateTime.tryParse(dates[i]);
+      if (date != null && date.isAfter(cutoff)) {
+        keep.add(ids[i]);
+        cleanIds.add(ids[i]);
+        cleanDates.add(dates[i]);
+      }
+    }
+    await prefs.setStringList('sent_note_ids', cleanIds);
+    await prefs.setStringList('sent_note_dates', cleanDates);
+    return keep;
+  }
+
+  Future<void> _rememberNote(SharedPreferences prefs, String noteId) async {
+    final ids = prefs.getStringList('sent_note_ids') ?? [];
+    final dates = prefs.getStringList('sent_note_dates') ?? [];
+    ids.add(noteId);
+    dates.add(DateTime.now().toIso8601String());
+    await prefs.setStringList('sent_note_ids', ids);
+    await prefs.setStringList('sent_note_dates', dates);
+  }
+
+  /// Choisit une periode parmi celles qui ont des chroniques.
+  ///
+  /// Celles proposees ces derniers jours passent leur tour : sans cela, deux
+  /// semaines sortirait tous les jours, puisque c'est la premiere de la liste
+  /// et qu'un journal tenu regulierement en a toujours une.
+  Future<MemoryPeriod?> _pickPeriod(
+      SharedPreferences prefs, List<Note> notes) async {
+    final available = MemoryPeriod.available(notes);
+    if (available.isEmpty) return null;
+
+    final seen = prefs.getStringList('sent_periods') ?? [];
+    final seenDates = prefs.getStringList('sent_period_dates') ?? [];
+    final cutoff = DateTime.now().subtract(const Duration(days: 6));
+    final recent = <int>{};
+    final keepDays = <String>[];
+    final keepDates = <String>[];
+    for (var i = 0; i < seen.length && i < seenDates.length; i++) {
+      final date = DateTime.tryParse(seenDates[i]);
+      if (date != null && date.isAfter(cutoff)) {
+        recent.add(int.tryParse(seen[i]) ?? -1);
+        keepDays.add(seen[i]);
+        keepDates.add(seenDates[i]);
+      }
+    }
+
+    final fresh =
+        available.where((p) => !recent.contains(p.days)).toList();
+    final pool = fresh.isNotEmpty ? fresh : available;
+    final chosen = pool[Random().nextInt(pool.length)];
+
+    keepDays.add('${chosen.days}');
+    keepDates.add(DateTime.now().toIso8601String());
+    await prefs.setStringList('sent_periods', keepDays);
+    await prefs.setStringList('sent_period_dates', keepDates);
+    return chosen;
+  }
+
+  /// Le souvenir du soir : une chronique, a lire.
   Future<void> checkAndNotifyMemories({bool force = false}) async {
     if (!_isAvailable || !_memoriesEnabled) return;
 
     try {
-      final now = DateTime.now();
       final prefs = await SharedPreferences.getInstance();
-      final lastNotifKey = 'last_notif_date';
-      final today = '${now.year}-${now.month}-${now.day}';
-
-      if (!force) {
-        // Heure configurée convertie en minutes depuis minuit
-        final configMinutes = _memoriesHour * 60 + _memoriesMinute;
-        final currentMinutes = now.hour * 60 + now.minute;
-
-        if (currentMinutes < configMinutes) {
-          debugPrint(
-              'Trop tôt pour les souvenirs ($currentMinutes < $configMinutes)');
-          await prefs.setString('last_notif_reason',
-              'En attente de ${memoriesTimeFormatted}');
-          return;
-        }
-
-        // Fenêtre de tir : on n'envoie que si on est dans l'heure qui suit l'heure prévue
-        if (currentMinutes > configMinutes + 60) {
-          debugPrint('Heure passée pour aujourd\'hui ($currentMinutes > ${configMinutes + 60})');
-          await prefs.setString('last_notif_reason', 'Heure dépassée pour aujourd\'hui');
-          return;
-        }
-
-        // Vérifier si on a déjà notifié aujourd'hui
-        if (prefs.getString(lastNotifKey) == today) {
-          debugPrint('Déjà notifié aujourd\'hui ($today)');
-          await prefs.setString(
-              'last_notif_reason', 'Déjà notifié aujourd\'hui');
-          return;
-        }
+      if (!force &&
+          !await _isDue(
+              prefs, 'last_notif_date', _memoriesHour, _memoriesMinute)) {
+        await prefs.setString('last_notif_reason',
+            'En attente de $memoriesTimeFormatted');
+        return;
       }
 
       final notes = await NoteService.instance.getAllNotes();
@@ -627,66 +794,95 @@ class MemoryNotificationService {
         return;
       }
 
-      // === Anti-doublon : charger les IDs envoyés récemment ===
-      final sentIdsRaw = prefs.getStringList('sent_note_ids') ?? [];
-      final sentDatesRaw = prefs.getStringList('sent_note_dates') ?? [];
-      final cutoff = now.subtract(const Duration(days: 7));
-      
-      // Nettoyer les entrées > 7 jours
-      final cleanIds = <String>[];
-      final cleanDates = <String>[];
-      for (int i = 0; i < sentIdsRaw.length && i < sentDatesRaw.length; i++) {
-        final date = DateTime.tryParse(sentDatesRaw[i]);
-        if (date != null && date.isAfter(cutoff)) {
-          cleanIds.add(sentIdsRaw[i]);
-          cleanDates.add(sentDatesRaw[i]);
-        }
-      }
-      final recentlyNotifiedIds = cleanIds.toSet();
+      final recent = await _recentlySent(prefs);
+      final period = await _pickPeriod(prefs, notes);
 
-      final random = Random();
-
-      // 1. Chercher des souvenirs spécifiques (anniversaires, etc)
-      for (final entry in memoryPeriods.entries) {
-        final days = entry.key;
-        final message = entry.value;
-        final tolerance = days < 60 ? 1 : 3;
-
-        final periodNotes = notes.where((note) {
-          final diff = now.difference(note.createdAt).inDays;
-          return diff >= days - tolerance && diff <= days + tolerance &&
-              !recentlyNotifiedIds.contains(note.id);
-        }).toList();
-
-        if (periodNotes.isNotEmpty) {
-          final note = periodNotes[random.nextInt(periodNotes.length)];
-          await sendMemoryNotification(note, customMessage: message);
-          await prefs.setString(lastNotifKey, today);
-          // Enregistrer cet ID comme envoyé
-          cleanIds.add(note.id);
-          cleanDates.add(now.toIso8601String());
-          await prefs.setStringList('sent_note_ids', cleanIds);
-          await prefs.setStringList('sent_note_dates', cleanDates);
-          return;
-        }
+      Note note;
+      String message;
+      if (period != null) {
+        final candidates = period
+            .matching(notes)
+            .where((n) => !recent.contains(n.id))
+            .toList();
+        final pool =
+            candidates.isNotEmpty ? candidates : period.matching(notes);
+        note = pool[Random().nextInt(pool.length)];
+        message = period.label;
+      } else {
+        final pool = notes.where((n) => !recent.contains(n.id)).toList();
+        final from = pool.isNotEmpty ? pool : notes;
+        note = from[Random().nextInt(from.length)];
+        message = _memoryMessages[Random().nextInt(_memoryMessages.length)];
       }
 
-      // 2. Sinon, envoyer une note aléatoire (pas récemment notifiée)
-      final available = notes.where((n) => !recentlyNotifiedIds.contains(n.id)).toList();
-      final pool = available.isNotEmpty ? available : notes;
-      final note = pool[random.nextInt(pool.length)];
-      await sendMemoryNotification(note,
-          customMessage: _memoryMessages[random.nextInt(_memoryMessages.length)]);
-      await prefs.setString(lastNotifKey, today);
-      // Enregistrer cet ID comme envoyé
-      cleanIds.add(note.id);
-      cleanDates.add(now.toIso8601String());
-      await prefs.setStringList('sent_note_ids', cleanIds);
-      await prefs.setStringList('sent_note_dates', cleanDates);
-      await prefs.setString(
-          'last_notif_reason', 'Souvenir envoyé (${now.hour}:${now.minute})');
+      await sendMemoryNotification(note, customMessage: message);
+      await _markSent(prefs, 'last_notif_date');
+      await _rememberNote(prefs, note.id);
+      await prefs.setString('last_notif_reason', 'Souvenir envoyé ($message)');
     } catch (e) {
       debugPrint('Erreur checkAndNotifyMemories: $e');
+    }
+  }
+
+  /// La seconde notification de la journee : elle ouvre le diaporama des
+  /// chroniques d'une meme distance dans le temps.
+  Future<void> checkAndNotifySlideshow({bool force = false}) async {
+    if (!_isAvailable || !_slideshowEnabled) return;
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (!force &&
+          !await _isDue(prefs, 'last_slideshow_date', _slideshowHour,
+              _slideshowMinute)) {
+        return;
+      }
+
+      final notes = await NoteService.instance.getAllNotes();
+      if (notes.isEmpty) return;
+
+      final period = await _pickPeriod(prefs, notes);
+      if (period == null) {
+        await prefs.setString(
+            'last_slideshow_reason', 'Aucune période à montrer');
+        return;
+      }
+
+      final matching = period.matching(notes);
+      final count = matching.length;
+
+      // Une image du diaporama en avant-garde : c'est elle qui donne envie
+      // d'ouvrir, bien plus qu'une ligne de texte.
+      String? cover;
+      for (final note in matching) {
+        for (final path in note.imagePaths) {
+          if (await File(path).exists()) {
+            cover = path;
+            break;
+          }
+        }
+        if (cover != null) break;
+      }
+
+      await showLocalNotification(
+        id: 'slideshow_${period.days}'.hashCode,
+        title: period.label,
+        body: count > 1
+            ? '$count chroniques à revoir en diaporama'
+            : matching.first.title.isNotEmpty
+                ? matching.first.title
+                : 'Une chronique à revoir',
+        // Le prefixe dit a l'application d'ouvrir le diaporama de cette
+        // periode plutot qu'une chronique isolee.
+        payload: 'memories:${period.days}',
+        imagePath: cover,
+        bigText: cover != null ? null : _excerpt(matching.first),
+      );
+
+      await _markSent(prefs, 'last_slideshow_date');
+      await prefs.setString(
+          'last_slideshow_reason', 'Diaporama envoyé (${period.title})');
+    } catch (e) {
+      debugPrint('Erreur checkAndNotifySlideshow: $e');
     }
   }
 

@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import '../models/note.dart';
 import '../models/note_mood.dart';
 import '../theme/app_theme.dart';
+import '../utils/responsive.dart';
 import 'note_view_screen.dart';
 import '../services/note_service.dart';
 
@@ -55,18 +56,43 @@ class _TimelineAlbumReaderState extends State<TimelineAlbumReader> {
 
     return Scaffold(
       backgroundColor: isDark ? AppTheme.bgDark : AppTheme.bgLight,
-      body: SafeArea(
-        child: Column(
-          children: [
-            _buildTopBar(isDark),
-            _buildProgressBar(isDark),
-            Expanded(
-              child: widget.notes.isEmpty
-                  ? _buildEmpty(isDark)
-                  : _buildBookPages(isDark),
-            ),
-            _buildBottomNav(isDark),
-          ],
+      body: Focus(
+        autofocus: true,
+        onKeyEvent: (node, event) {
+          // Un lecteur se feuillette au clavier : c'est le geste attendu des
+          // qu'on est assis devant un ecran.
+          if (event is! KeyDownEvent) return KeyEventResult.ignored;
+          final k = event.logicalKey;
+          if (k == LogicalKeyboardKey.arrowRight ||
+              k == LogicalKeyboardKey.pageDown) {
+            _pageController.nextPage(
+                duration: const Duration(milliseconds: 380),
+                curve: Curves.easeOutCubic);
+          } else if (k == LogicalKeyboardKey.arrowLeft ||
+              k == LogicalKeyboardKey.pageUp) {
+            _pageController.previousPage(
+                duration: const Duration(milliseconds: 380),
+                curve: Curves.easeOutCubic);
+          } else if (k == LogicalKeyboardKey.escape) {
+            Navigator.of(context).maybePop();
+          } else {
+            return KeyEventResult.ignored;
+          }
+          return KeyEventResult.handled;
+        },
+        child: SafeArea(
+          child: Column(
+            children: [
+              ContentBounds(maxWidth: 900, child: _buildTopBar(isDark)),
+              ContentBounds(maxWidth: 900, child: _buildProgressBar(isDark)),
+              Expanded(
+                child: widget.notes.isEmpty
+                    ? _buildEmpty(isDark)
+                    : _buildBookPages(isDark),
+              ),
+              ContentBounds(maxWidth: 900, child: _buildBottomNav(isDark)),
+            ],
+          ),
         ),
       ),
     );
@@ -179,8 +205,13 @@ class _TimelineAlbumReaderState extends State<TimelineAlbumReader> {
             child: child,
           );
         },
-        child: Container(
-          margin: const EdgeInsets.fromLTRB(20, 12, 20, 8),
+        // Colonne de lecture bornee : la page occupait toute la largeur, soit
+        // des lignes de texte de 1 800 px sur un ecran desktop.
+        child: Center(
+          child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 720),
+          child: Container(
+          margin: const EdgeInsets.fromLTRB(20, 14, 20, 10),
           decoration: BoxDecoration(
             color: isDark ? AppTheme.surfaceDark : Colors.white,
             borderRadius: BorderRadius.circular(24),
@@ -212,11 +243,21 @@ class _TimelineAlbumReaderState extends State<TimelineAlbumReader> {
                   if (hasImage && File(note.imagePaths.first).existsSync())
                     Stack(
                       children: [
-                        Image.file(
-                          File(note.imagePaths.first),
-                          height: 200,
-                          width: double.infinity,
-                          fit: BoxFit.cover,
+                        LayoutBuilder(
+                          builder: (context, c) {
+                            final dpr =
+                                MediaQuery.devicePixelRatioOf(context);
+                            return Image.file(
+                              File(note.imagePaths.first),
+                              height: 230,
+                              width: double.infinity,
+                              fit: BoxFit.cover,
+                              cacheWidth: c.maxWidth.isFinite && c.maxWidth > 0
+                                  ? (c.maxWidth * dpr).round()
+                                  : null,
+                              errorBuilder: (_, __, ___) => const SizedBox(),
+                            );
+                          },
                         ),
                         // Gradient overlay pour le texte
                         Positioned(
@@ -415,6 +456,8 @@ class _TimelineAlbumReaderState extends State<TimelineAlbumReader> {
             ),
           ),
         ),
+        ),
+        ),
       ),
     );
   }
@@ -477,33 +520,6 @@ class _TimelineAlbumReaderState extends State<TimelineAlbumReader> {
     );
   }
 
-  Widget _buildNavButton({
-    required IconData icon,
-    required bool enabled,
-    required VoidCallback onTap,
-    required bool isDark,
-  }) {
-    return GestureDetector(
-      onTap: enabled ? onTap : null,
-      child: AnimatedOpacity(
-        duration: const Duration(milliseconds: 200),
-        opacity: enabled ? 1.0 : 0.3,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-          decoration: BoxDecoration(
-            color: isDark
-                ? Colors.white.withOpacity(0.08)
-                : Colors.grey.shade100,
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Icon(icon,
-              size: 18,
-              color: isDark ? AppTheme.textLight : AppTheme.textDark),
-        ),
-      ),
-    );
-  }
-
   void _openNote(Note note) {
     Navigator.push(
       context,
@@ -517,7 +533,8 @@ class _TimelineAlbumReaderState extends State<TimelineAlbumReader> {
           },
           onToggleFavorite: () {
             note.isFavorite = !note.isFavorite;
-            NoteService.instance.saveNote(note);
+            // Marquer un favori ne doit pas rajeunir la note.
+            NoteService.instance.saveNote(note, touch: false);
           },
         ),
       ),
@@ -533,6 +550,22 @@ class _TimelineAlbumReaderState extends State<TimelineAlbumReader> {
     return '${days[date.weekday - 1]} ${date.day} ${months[date.month]}';
   }
 
+  Widget _buildNavButton({
+    required IconData icon,
+    required bool enabled,
+    required VoidCallback onTap,
+    required bool isDark,
+  }) {
+    return _ReaderNavButton(
+      icon: icon,
+      enabled: enabled,
+      onTap: onTap,
+      isDark: isDark,
+      accent: widget.accentColor,
+      label: icon == Icons.chevron_left_rounded ? 'Précédent' : 'Suivant',
+    );
+  }
+
   Widget _buildEmpty(bool isDark) {
     return Center(
       child: Text(
@@ -540,6 +573,97 @@ class _TimelineAlbumReaderState extends State<TimelineAlbumReader> {
         style: TextStyle(
           fontSize: 14,
           color: isDark ? AppTheme.textMutedDark : AppTheme.textMuted,
+        ),
+      ),
+    );
+  }
+}
+
+/// Bouton de feuilletage. L'ancien etait un GestureDetector nu : aucune
+/// reaction au survol ni au clic, et pas de curseur.
+class _ReaderNavButton extends StatefulWidget {
+  final IconData icon;
+  final bool enabled;
+  final VoidCallback onTap;
+  final bool isDark;
+  final Color accent;
+  final String label;
+
+  const _ReaderNavButton({
+    required this.icon,
+    required this.enabled,
+    required this.onTap,
+    required this.isDark,
+    required this.accent,
+    required this.label,
+  });
+
+  @override
+  State<_ReaderNavButton> createState() => _ReaderNavButtonState();
+}
+
+class _ReaderNavButtonState extends State<_ReaderNavButton> {
+  bool _hover = false;
+  bool _down = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final on = widget.enabled;
+    final accent = widget.accent;
+
+    return Tooltip(
+      message: widget.icon == Icons.chevron_left_rounded
+          ? '${widget.label}  ·  ←'
+          : '${widget.label}  ·  →',
+      waitDuration: const Duration(milliseconds: 400),
+      child: MouseRegion(
+        cursor: on ? SystemMouseCursors.click : SystemMouseCursors.basic,
+        onEnter: (_) => setState(() => _hover = true),
+        onExit: (_) => setState(() => _hover = false),
+        child: GestureDetector(
+          onTap: on ? widget.onTap : null,
+          onTapDown: on ? (_) => setState(() => _down = true) : null,
+          onTapUp: on ? (_) => setState(() => _down = false) : null,
+          onTapCancel: () => setState(() => _down = false),
+          child: AnimatedOpacity(
+            duration: const Duration(milliseconds: 180),
+            opacity: on ? 1 : 0.28,
+            child: AnimatedScale(
+              duration: const Duration(milliseconds: 110),
+              scale: _down ? 0.93 : 1,
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 170),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 15, vertical: 11),
+                decoration: BoxDecoration(
+                  color: on && _hover
+                      ? accent
+                      : (widget.isDark
+                          ? Colors.white.withValues(alpha: 0.07)
+                          : Colors.black.withValues(alpha: 0.045)),
+                  borderRadius: BorderRadius.circular(13),
+                  boxShadow: on && _hover
+                      ? [
+                          BoxShadow(
+                            color: accent.withValues(alpha: 0.42),
+                            blurRadius: 16,
+                            offset: const Offset(0, 5),
+                          ),
+                        ]
+                      : null,
+                ),
+                child: Icon(
+                  widget.icon,
+                  size: 19,
+                  color: on && _hover
+                      ? Colors.white
+                      : (widget.isDark
+                          ? AppTheme.textMutedDark
+                          : AppTheme.textMuted),
+                ),
+              ),
+            ),
+          ),
         ),
       ),
     );

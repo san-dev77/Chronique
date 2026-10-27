@@ -58,13 +58,15 @@ void callbackDispatcher() {
         await NoteService.instance.initializeForUser(userId);
         await MemoryNotificationService.instance.init();
         
-        if (task == memoriesOneOffTaskName) {
-           debugPrint('Worker: Explicit one-off memory trigger');
-           await MemoryNotificationService.instance.checkAndNotifyMemories(force: true);
-        } else {
-           // Cycle classique
-           await MemoryNotificationService.instance.checkAndNotifyMemories();
-        }
+        // Deux rendez-vous par jour : le diaporama d'une periode le matin,
+        // le souvenir a lire le soir. Chacun garde sa propre date d'envoi,
+        // donc l'un ne consomme pas le tour de l'autre.
+        //
+        // Plus de `force` ici : il sautait l'heure prevue et le garde
+        // quotidien, si bien que la notification partait au moment ou Android
+        // voulait bien reveiller la tache — le soir, la nuit, au hasard.
+        await MemoryNotificationService.instance.checkAndNotifySlideshow();
+        await MemoryNotificationService.instance.checkAndNotifyMemories();
         
         // Mettre à jour les logs système
         await prefs.setString('last_worker_run', now.toIso8601String());
@@ -200,7 +202,9 @@ class BackgroundTaskService {
     final notes = NoteService.instance.getAllNotes();
     print('Force Run: Found ${notes.length} notes in current box');
     
-    // 4. Forcer le check des souvenirs (Bypass du verrou journalier pour le debug)
+    // 4. Forcer les deux rendez-vous (le verrou journalier est contourne ici,
+    //    c'est le bouton de test des reglages).
+    await MemoryNotificationService.instance.checkAndNotifySlideshow(force: true);
     await MemoryNotificationService.instance.checkAndNotifyMemories(force: true);
     
     // 5. Check social notifications (Toujours déverrouillé par défaut)

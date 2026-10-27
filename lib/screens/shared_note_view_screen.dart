@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+import 'dart:ui' show FontFeature;
 import 'dart:async';
 import 'package:flutter/material.dart';
 import '../models/shared_note.dart';
@@ -397,98 +399,105 @@ class _SharedNoteViewScreenState extends State<SharedNoteViewScreen>
   }
 
   Widget _buildImageGallery(List<String> imagesBase64) {
-    return Column(
-      children: imagesBase64.map((base64) {
-        final imageWidget = ImageBase64Service.instance.decodeBase64ToImage(
-          base64,
-          fit: BoxFit.cover,
-        );
+    return Builder(builder: (context) {
+      // Sans contrainte, Image.memory s'affiche a la resolution intrinseque :
+      // une photo de 1920 px occupait toute la colonne sur toute sa hauteur.
+      final size = MediaQuery.sizeOf(context);
+      final maxH = (size.height * 0.36).clamp(180.0, 380.0);
+      final dpr = MediaQuery.devicePixelRatioOf(context);
 
-        if (imageWidget == null) return const SizedBox.shrink();
+      final images = <Widget>[];
+      for (var i = 0; i < imagesBase64.length; i++) {
+        final bytes =
+            ImageBase64Service.instance.decodeBase64ToBytes(imagesBase64[i]);
+        if (bytes == null) continue;
+        images.add(_SharedImage(
+          bytes: bytes,
+          maxHeight: i == 0 ? maxH : maxH * 0.55,
+          dpr: dpr,
+        ));
+      }
+      if (images.isEmpty) return const SizedBox.shrink();
 
-        return Padding(
-          padding: const EdgeInsets.only(bottom: 12),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(12),
-            child: imageWidget,
-          ),
-        );
-      }).toList(),
-    );
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          images.first,
+          if (images.length > 1) ...[
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              children: images.skip(1).toList(),
+            ),
+          ],
+        ],
+      );
+    });
   }
 
   Widget _buildReactionsAndComments(
       SharedNote note, bool isDark, Color primaryColor) {
     final emojiReactions =
         note.reactions.where((r) => r.isEmojiReaction).toList();
-    final comments = note.reactions.where((r) => r.isComment).toList();
-    final noteColor = Color(note.color);
-    final textColor = _getTextColor(noteColor, isDark);
+    final comments = note.reactions.where((r) => r.isComment).toList()
+      ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
 
     if (emojiReactions.isEmpty && comments.isEmpty) {
-      return const SizedBox.shrink();
+      return _EmptyThread(isDark: isDark, accent: primaryColor);
     }
+
+    final grouped = _groupReactionsByEmoji(emojiReactions);
+    final me = AuthService.instance.userId;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Réactions emojis
-        if (emojiReactions.isNotEmpty) ...[
-          Text(
-            'Réactions',
-            style: TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.bold,
-              color: textColor.withOpacity(0.7),
-            ),
+        if (grouped.isNotEmpty) ...[
+          _ThreadLabel(
+            text: 'Réactions',
+            count: emojiReactions.length,
+            isDark: isDark,
+            accent: primaryColor,
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 12),
           Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children:
-                _groupReactionsByEmoji(emojiReactions).entries.map((entry) {
-              return Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                decoration: BoxDecoration(
-                  color: textColor.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(entry.key, style: const TextStyle(fontSize: 18)),
-                    const SizedBox(width: 6),
-                    Text(
-                      entry.value.toString(),
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.bold,
-                        color: textColor.withOpacity(0.8),
-                      ),
-                    ),
-                  ],
-                ),
+            spacing: 9,
+            runSpacing: 9,
+            children: grouped.entries.map((e) {
+              // Une reaction a laquelle on a participe se distingue.
+              final mine = emojiReactions.any(
+                  (r) => r.emoji == e.key && r.userId == me);
+              return _ReactionPill(
+                emoji: e.key,
+                count: e.value,
+                mine: mine,
+                isDark: isDark,
+                accent: primaryColor,
               );
             }).toList(),
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 26),
         ],
-
-        // Commentaires
         if (comments.isNotEmpty) ...[
-          Text(
-            'Commentaires (${comments.length})',
-            style: TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.bold,
-              color: textColor.withOpacity(0.7),
-            ),
+          _ThreadLabel(
+            text: 'Commentaires',
+            count: comments.length,
+            isDark: isDark,
+            accent: primaryColor,
           ),
-          const SizedBox(height: 12),
-          ...comments.map((comment) =>
-              _buildCommentCard(comment, isDark, primaryColor, note)),
+          const SizedBox(height: 14),
+          // Fil de conversation : un filet relie les messages, comme dans une
+          // discussion, au lieu d'une pile de cartes independantes.
+          for (var i = 0; i < comments.length; i++)
+            _CommentTile(
+              comment: comments[i],
+              isDark: isDark,
+              accent: primaryColor,
+              isMine: comments[i].userId == me,
+              isAuthor: comments[i].userId == note.senderId,
+              isLast: i == comments.length - 1,
+            ),
         ],
       ],
     );
@@ -500,72 +509,6 @@ class _SharedNoteViewScreenState extends State<SharedNoteViewScreen>
       counts[reaction.emoji] = (counts[reaction.emoji] ?? 0) + 1;
     }
     return counts;
-  }
-
-  Widget _buildCommentCard(
-      Reaction comment, bool isDark, Color primaryColor, SharedNote note) {
-    // Essayer de trouver l'utilisateur dans les membres (ou utiliser les infos de la note si c'est l'auteur)
-    final bool isAuthor = comment.userId == note.senderId;
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: isDark ? Colors.white.withOpacity(0.05) : Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: isDark
-            ? null
-            : [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.05),
-                  blurRadius: 8,
-                  offset: const Offset(0, 2),
-                ),
-              ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              // Avatar centralisé et robuste
-              UserAvatar(
-                userId: comment.userId,
-                displayName: comment.userName,
-                radius: 14,
-                heroTag: 'avatar_comment_${comment.id}',
-              ),
-              const SizedBox(width: 8),
-              Text(
-                comment.userName,
-                style: TextStyle(
-                  fontWeight: FontWeight.w600,
-                  fontSize: 13,
-                  color: isDark ? Colors.white : Colors.black87,
-                ),
-              ),
-              const Spacer(),
-              Text(
-                DateFormatter.formatRelativeDate(comment.createdAt),
-                style: TextStyle(
-                  fontSize: 11,
-                  color: isDark ? Colors.white38 : Colors.black38,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Text(
-            comment.comment ?? '',
-            style: TextStyle(
-              fontSize: 14,
-              color: isDark ? Colors.white70 : Colors.black87,
-              height: 1.4,
-            ),
-          ),
-        ],
-      ),
-    );
   }
 
   Widget _buildInteractionBar(
@@ -709,5 +652,420 @@ class _SharedNoteViewScreenState extends State<SharedNoteViewScreen>
     if (isDark) return Colors.white;
     // Si la couleur est trop claire, texte noir, sinon texte blanc
     return bg.computeLuminance() > 0.6 ? Colors.black87 : Colors.white;
+  }
+}
+
+/// Image d'une chronique partagee, hauteur bornee et decodee a la bonne taille.
+class _SharedImage extends StatefulWidget {
+  final Uint8List bytes;
+  final double maxHeight;
+  final double dpr;
+
+  const _SharedImage({
+    required this.bytes,
+    required this.maxHeight,
+    required this.dpr,
+  });
+
+  @override
+  State<_SharedImage> createState() => _SharedImageState();
+}
+
+class _SharedImageState extends State<_SharedImage> {
+  bool _hover = false;
+
+  void _open() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => Scaffold(
+          backgroundColor: Colors.black,
+          body: Stack(
+            children: [
+              Center(
+                child: InteractiveViewer(
+                  minScale: 0.5,
+                  maxScale: 4,
+                  child: Image.memory(widget.bytes, fit: BoxFit.contain),
+                ),
+              ),
+              SafeArea(
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: IconButton(
+                    icon: const Icon(Icons.close_rounded, color: Colors.white),
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      cursor: SystemMouseCursors.zoomIn,
+      onEnter: (_) => setState(() => _hover = true),
+      onExit: (_) => setState(() => _hover = false),
+      child: GestureDetector(
+        onTap: _open,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 160),
+          curve: Curves.easeOutCubic,
+          constraints: BoxConstraints(maxHeight: widget.maxHeight),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: _hover ? 0.34 : 0.18),
+                blurRadius: _hover ? 26 : 16,
+                offset: const Offset(0, 8),
+              ),
+            ],
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(16),
+            child: LayoutBuilder(
+              builder: (context, c) => Image.memory(
+                widget.bytes,
+                fit: BoxFit.cover,
+                width: double.infinity,
+                cacheWidth: c.maxWidth.isFinite && c.maxWidth > 0
+                    ? (c.maxWidth * widget.dpr).round()
+                    : null,
+                errorBuilder: (_, __, ___) => Container(
+                  height: 120,
+                  color: Colors.black26,
+                  child: const Icon(Icons.broken_image_outlined,
+                      color: Colors.white38),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Intitule d'une section du fil, avec son compte.
+class _ThreadLabel extends StatelessWidget {
+  final String text;
+  final int count;
+  final bool isDark;
+  final Color accent;
+
+  const _ThreadLabel({
+    required this.text,
+    required this.count,
+    required this.isDark,
+    required this.accent,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Text(
+          text.toUpperCase(),
+          style: TextStyle(
+            fontSize: 10.5,
+            fontWeight: FontWeight.w800,
+            letterSpacing: 1.3,
+            color: isDark ? AppTheme.textMutedDark : AppTheme.textMuted,
+          ),
+        ),
+        const SizedBox(width: 8),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+          decoration: BoxDecoration(
+            color: accent.withValues(alpha: 0.16),
+            borderRadius: BorderRadius.circular(7),
+          ),
+          child: Text(
+            '$count',
+            style: TextStyle(
+              fontSize: 10.5,
+              fontWeight: FontWeight.w800,
+              color: accent,
+            ),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Container(
+            height: 1,
+            color: (isDark ? Colors.white : Colors.black)
+                .withValues(alpha: 0.07),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// Pastille de reaction. Celle a laquelle on a participe est cerclee d'accent.
+class _ReactionPill extends StatefulWidget {
+  final String emoji;
+  final int count;
+  final bool mine;
+  final bool isDark;
+  final Color accent;
+
+  const _ReactionPill({
+    required this.emoji,
+    required this.count,
+    required this.mine,
+    required this.isDark,
+    required this.accent,
+  });
+
+  @override
+  State<_ReactionPill> createState() => _ReactionPillState();
+}
+
+class _ReactionPillState extends State<_ReactionPill> {
+  bool _hover = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = widget.accent;
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hover = true),
+      onExit: (_) => setState(() => _hover = false),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 140),
+        curve: Curves.easeOutCubic,
+        transform: Matrix4.identity()..translate(0.0, _hover ? -2.0 : 0.0),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+        decoration: BoxDecoration(
+          color: widget.mine
+              ? accent.withValues(alpha: widget.isDark ? 0.22 : 0.13)
+              : (widget.isDark
+                  ? Colors.white.withValues(alpha: 0.07)
+                  : Colors.black.withValues(alpha: 0.045)),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: widget.mine
+                ? accent.withValues(alpha: 0.7)
+                : Colors.transparent,
+            width: 1.4,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(widget.emoji, style: const TextStyle(fontSize: 17)),
+            const SizedBox(width: 7),
+            Text(
+              '${widget.count}',
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w800,
+                fontFeatures: const [FontFeature.tabularFigures()],
+                color: widget.mine
+                    ? accent
+                    : (widget.isDark
+                        ? AppTheme.textMutedDark
+                        : AppTheme.textMuted),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Un message du fil : avatar, filet de continuite, bulle.
+class _CommentTile extends StatelessWidget {
+  final Reaction comment;
+  final bool isDark;
+  final Color accent;
+  final bool isMine;
+  final bool isAuthor;
+  final bool isLast;
+
+  const _CommentTile({
+    required this.comment,
+    required this.isDark,
+    required this.accent,
+    required this.isMine,
+    required this.isAuthor,
+    required this.isLast,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final bubble = isMine
+        ? accent.withValues(alpha: isDark ? 0.20 : 0.12)
+        : (isDark
+            ? Colors.white.withValues(alpha: 0.055)
+            : Colors.black.withValues(alpha: 0.035));
+
+    return IntrinsicHeight(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Column(
+            children: [
+              UserAvatar(
+                userId: comment.userId,
+                displayName: comment.userName,
+                radius: 15,
+                heroTag: 'avatar_comment_${comment.id}',
+              ),
+              // Filet de continuite : le fil se lit comme une conversation.
+              if (!isLast)
+                Expanded(
+                  child: Container(
+                    width: 1.5,
+                    margin: const EdgeInsets.symmetric(vertical: 6),
+                    color: (isDark ? Colors.white : Colors.black)
+                        .withValues(alpha: 0.08),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Padding(
+              padding: EdgeInsets.only(bottom: isLast ? 0 : 16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          isMine ? 'Vous' : comment.userName,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                            color: isDark ? Colors.white : AppTheme.textDark,
+                          ),
+                        ),
+                      ),
+                      if (isAuthor) ...[
+                        const SizedBox(width: 7),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: accent.withValues(alpha: 0.18),
+                            borderRadius: BorderRadius.circular(5),
+                          ),
+                          child: Text(
+                            'AUTEUR',
+                            style: TextStyle(
+                              fontSize: 8.5,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: 0.7,
+                              color: accent,
+                            ),
+                          ),
+                        ),
+                      ],
+                      const SizedBox(width: 8),
+                      Text(
+                        DateFormatter.formatRelativeDate(comment.createdAt),
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: isDark
+                              ? AppTheme.textMutedDark
+                              : AppTheme.textMuted,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 7),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 14, vertical: 11),
+                    decoration: BoxDecoration(
+                      color: bubble,
+                      borderRadius: const BorderRadius.only(
+                        topLeft: Radius.circular(4),
+                        topRight: Radius.circular(14),
+                        bottomLeft: Radius.circular(14),
+                        bottomRight: Radius.circular(14),
+                      ),
+                      border: isMine
+                          ? Border.all(color: accent.withValues(alpha: 0.35))
+                          : null,
+                    ),
+                    child: Text(
+                      comment.comment ?? '',
+                      style: TextStyle(
+                        fontSize: 14.5,
+                        height: 1.5,
+                        color: isDark
+                            ? Colors.white.withValues(alpha: 0.92)
+                            : AppTheme.textDark,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Aucune reaction ni commentaire : on invite plutot que de laisser un vide.
+class _EmptyThread extends StatelessWidget {
+  final bool isDark;
+  final Color accent;
+
+  const _EmptyThread({required this.isDark, required this.accent});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(vertical: 26, horizontal: 20),
+      decoration: BoxDecoration(
+        color: (isDark ? Colors.white : Colors.black).withValues(alpha: 0.03),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: (isDark ? Colors.white : Colors.black)
+              .withValues(alpha: 0.06),
+        ),
+      ),
+      child: Column(
+        children: [
+          Icon(Icons.mode_comment_outlined,
+              size: 26, color: accent.withValues(alpha: 0.7)),
+          const SizedBox(height: 12),
+          Text(
+            'Personne n\'a encore réagi',
+            style: TextStyle(
+              fontSize: 14.5,
+              fontWeight: FontWeight.w700,
+              color: isDark ? Colors.white : AppTheme.textDark,
+            ),
+          ),
+          const SizedBox(height: 5),
+          Text(
+            'Soyez le premier à laisser un mot.',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 13,
+              color: isDark ? AppTheme.textMutedDark : AppTheme.textMuted,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }

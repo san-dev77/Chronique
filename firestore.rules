@@ -1,0 +1,72 @@
+// Règles Firestore de Chroniques.
+//
+// Elles ne vivaient que dans la console Firebase : rien dans le dépôt ne
+// disait ce que le serveur autorise. Les voici, reconstituées à partir de ce
+// que le code demande réellement, pour qu'une modification et la règle qui va
+// avec voyagent ensemble.
+//
+// À publier : console Firebase → Firestore Database → Règles → Publier.
+//
+// Le point qui concerne la nouvelle synchronisation : les photos des
+// chroniques vivent maintenant dans une SOUS-COLLECTION `images` sous chaque
+// note (users/{uid}/notes/{noteId}/images/{empreinte}). Une règle écrite pour
+// `/users/{uid}/notes/{noteId}` seulement ne couvrirait PAS ses
+// sous-collections ; c'est la récursion `{document=**}` ci-dessous qui s'en
+// charge.
+//
+// Collections réellement utilisées par l'application :
+//   users/{uid}                               fiche publique (nom, avatar)
+//   users/{uid}/notes/{id}                    chroniques
+//   users/{uid}/notes/{id}/images/{empreinte} photos des chroniques
+//   users/{uid}/sparks/{id}                   étincelles
+//   shared_notes/{id}                         notes partagées
+//   notifications/{id}                        notifications
+
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // --- Comptes ------------------------------------------------------------
+    // Le document d'un utilisateur sert de fiche publique : le partage y lit
+    // un nom, un e-mail et un avatar. Il est donc lisible par tout compte
+    // connecté, mais modifiable par son seul propriétaire.
+    match /users/{userId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // Tout ce qui pend sous un compte — chroniques, photos, étincelles — ne
+    // regarde que lui. `{document=**}` descend dans les sous-collections.
+    match /users/{userId}/{document=**} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // --- Notes partagées ----------------------------------------------------
+    // L'expéditeur et le destinataire y ont accès. Le destinataire doit
+    // pouvoir écrire : les réactions et les commentaires sont des tableaux
+    // dans le document lui-même.
+    match /shared_notes/{shareId} {
+      function isParty() {
+        return request.auth != null
+               && (resource.data.senderId == request.auth.uid
+                   || resource.data.recipientId == request.auth.uid
+                   || resource.data.recipientEmail == request.auth.token.email);
+      }
+
+      allow read: if isParty();
+      allow update, delete: if isParty();
+      allow create: if request.auth != null
+                    && request.resource.data.senderId == request.auth.uid;
+    }
+
+    // --- Notifications ------------------------------------------------------
+    // Chacun lit les siennes et les marque comme lues ; n'importe quel compte
+    // connecté peut en déposer une (c'est ainsi qu'un partage se signale).
+    match /notifications/{notificationId} {
+      allow read, update, delete: if request.auth != null
+                                  && resource.data.recipientId == request.auth.uid;
+      allow create: if request.auth != null;
+    }
+  }
+}

@@ -5,6 +5,7 @@ import '../services/spark_service.dart';
 import '../utils/image_picker_helper.dart';
 import '../services/image_storage_service.dart';
 import '../theme/app_theme.dart';
+import '../utils/responsive.dart';
 
 class SparkEditScreen extends StatefulWidget {
   final Spark? spark;
@@ -22,13 +23,32 @@ class _SparkEditScreenState extends State<SparkEditScreen> {
   String? _imagePath;
   bool _isSaving = false;
 
+  // Etat d'origine : sans lui, ouvrir une etincelle pour la relire declenchait
+  // toujours la demande d'enregistrement, puisque les champs n'etaient pas vides.
+  late final String _initialTitle;
+  late final String _initialDescription;
+  late final String? _initialImagePath;
+
   @override
   void initState() {
     super.initState();
-    _titleController = TextEditingController(text: widget.spark?.title ?? '');
-    _descriptionController =
-        TextEditingController(text: widget.spark?.description ?? '');
-    _imagePath = widget.spark?.imagePath;
+    _initialTitle = widget.spark?.title ?? '';
+    _initialDescription = widget.spark?.description ?? '';
+    _initialImagePath = widget.spark?.imagePath;
+
+    _titleController = TextEditingController(text: _initialTitle);
+    _descriptionController = TextEditingController(text: _initialDescription);
+    _imagePath = _initialImagePath;
+  }
+
+  /// Vrai seulement si quelque chose a reellement change.
+  bool get _hasChanges {
+    if (_titleController.text.trim() != _initialTitle.trim()) return true;
+    if (_descriptionController.text.trim() != _initialDescription.trim()) {
+      return true;
+    }
+    if (_imagePath != _initialImagePath) return true;
+    return false;
   }
 
   @override
@@ -48,11 +68,8 @@ class _SparkEditScreenState extends State<SparkEditScreen> {
   }
 
   Future<bool> _onWillPop() async {
-    if (_titleController.text.isEmpty &&
-        _descriptionController.text.isEmpty &&
-        _imagePath == null) {
-      return true;
-    }
+    // Rien de modifie : on sort sans rien demander.
+    if (!_hasChanges) return true;
 
     final result = await showDialog<bool>(
       context: context,
@@ -184,6 +201,9 @@ class _SparkEditScreenState extends State<SparkEditScreen> {
         body: SingleChildScrollView(
           physics: const BouncingScrollPhysics(),
           padding: const EdgeInsets.symmetric(horizontal: 24),
+          // Bornage : sur desktop la saisie s'etirait sur toute la fenetre.
+          child: ContentBounds(
+          maxWidth: 720,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -276,7 +296,16 @@ class _SparkEditScreenState extends State<SparkEditScreen> {
                       color: isDark
                           ? Colors.white.withOpacity(0.15)
                           : Colors.black.withOpacity(0.1)),
+                  // Le theme impose filled:true et ses propres bordures :
+                  // sans les neutraliser, le champ dessine un rectangle.
                   border: InputBorder.none,
+                  enabledBorder: InputBorder.none,
+                  focusedBorder: InputBorder.none,
+                  disabledBorder: InputBorder.none,
+                  errorBorder: InputBorder.none,
+                  filled: false,
+                  fillColor: Colors.transparent,
+                  contentPadding: EdgeInsets.zero,
                 ),
               ),
 
@@ -311,11 +340,21 @@ class _SparkEditScreenState extends State<SparkEditScreen> {
                         : Colors.black.withOpacity(0.1),
                     fontSize: 18,
                   ),
+                  // Le theme impose filled:true et ses propres bordures :
+                  // sans les neutraliser, le champ dessine un rectangle.
                   border: InputBorder.none,
+                  enabledBorder: InputBorder.none,
+                  focusedBorder: InputBorder.none,
+                  disabledBorder: InputBorder.none,
+                  errorBorder: InputBorder.none,
+                  filled: false,
+                  fillColor: Colors.transparent,
+                  contentPadding: EdgeInsets.zero,
                 ),
               ),
               const SizedBox(height: 100),
             ],
+          ),
           ),
         ),
       ),

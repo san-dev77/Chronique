@@ -5,7 +5,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>Note Keeper</string>
+	<string>Chroniques</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -13,7 +13,7 @@
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>note_keeper</string>
+	<string>Chroniques</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
@@ -22,17 +22,56 @@
 	<string>????</string>
 	<key>CFBundleVersion</key>
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
+
+	<!-- Langue de l'interface. Les textes d'autorisation ci-dessous sont en
+	     francais : iOS les affiche tels quels dans ses boites de dialogue. -->
+	<key>CFBundleLocalizations</key>
+	<array>
+		<string>fr</string>
+		<string>en</string>
+	</array>
+
+	<!-- Autorisations.
+	     iOS ferme l'application sur-le-champ si elle touche a la
+	     photothèque sans avoir dit pourquoi. Le selecteur d'images est
+	     appele a quinze endroits du code : sans ces trois lignes, l'app
+	     disparait des la premiere photo. Le texte est lu par la personne,
+	     il doit donc expliquer, pas reciter. -->
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Pour illustrer vos chroniques avec vos propres photos.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Pour photographier un moment et le joindre à une chronique.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>Pour enregistrer dans vos photos une image tirée d’une chronique.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Pour enregistrer un souvenir sonore dans une chronique.</string>
+
+	<!-- Taches de fond : c'est ce qui permet aux notifications de souvenirs
+	     de partir meme quand l'application est fermee. -->
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>fetch</string>
+		<string>processing</string>
+		<string>remote-notification</string>
+	</array>
+	<key>BGTaskSchedulerPermittedIdentifiers</key>
+	<array>
+		<string>notebox_memories_task</string>
+		<string>notebox_memories_oneoff_task</string>
+	</array>
+
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
 	<key>UIMainStoryboardFile</key>
 	<string>Main</string>
+
+	<!-- Journal intime : on ecrit en portrait, sur un telephone tenu droit.
+	     Le paysage retournait des ecrans concus pour une colonne unique. -->
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>
-		<string>UIInterfaceOrientationLandscapeLeft</string>
-		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
 	<key>UISupportedInterfaceOrientations~ipad</key>
 	<array>
@@ -41,6 +80,9 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+
+	<!-- Laisse l'ecran aller au-dela de 60 Hz sur les iPhone Pro : le
+	     defilement et les auras y gagnent immediatement. -->
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>

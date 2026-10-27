@@ -6,6 +6,8 @@ import '../services/note_service.dart';
 import '../widgets/note_card.dart';
 import '../utils/page_transitions.dart';
 import '../theme/app_theme.dart';
+import '../utils/responsive.dart';
+import '../widgets/screen_header.dart';
 import 'note_edit_screen.dart';
 import 'note_view_screen.dart';
 import '../widgets/user_avatar.dart';
@@ -25,7 +27,23 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
   @override
   void initState() {
     super.initState();
+    // L'ecran reste vivant dans l'IndexedStack : il doit se remettre a jour
+    // quand les chroniques changent ailleurs. Sans cette ecoute, un ecran
+    // ouvert avant la fin de la synchronisation restait vide pour toujours —
+    // c'est ce qui faisait croire que les souvenirs et les albums ne
+    // chargeaient pas.
+    NoteService.instance.revision.addListener(_onDataChanged);
     _load();
+  }
+
+  void _onDataChanged() {
+    if (mounted) _load();
+  }
+
+  @override
+  void dispose() {
+    NoteService.instance.revision.removeListener(_onDataChanged);
+    super.dispose();
   }
 
   Future<void> _load() async {
@@ -34,7 +52,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
       await NoteService.instance.waitReady();
       final all = NoteService.instance.getAllNotes();
       _favorites = all.where((n) => n.isFavorite).toList()
-        ..sort((a, b) => b.modifiedAt.compareTo(a.modifiedAt));
+        ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
     } finally {
       setState(() => _isLoading = false);
     }
@@ -89,16 +107,31 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
       statusBarIconBrightness: Brightness.light,
     ));
 
-    return Scaffold(
-      body: SafeArea(
-        child: CustomScrollView(
-          slivers: [
-            SliverToBoxAdapter(child: _buildHeader(isDark)),
-            _buildContent(isDark),
-          ],
+    return LayoutBuilder(builder: (context, constraints) {
+      final width = constraints.maxWidth;
+      return Scaffold(
+        body: SafeArea(
+          child: CustomScrollView(
+            slivers: [
+              screenHeaderSliver(
+                width: width,
+                pinnedHeight: 116,
+                header: ScreenHeader(
+                  width: width,
+                  icon: Icons.favorite_rounded,
+                  title: 'Favoris',
+                  subtitle: _favorites.isEmpty
+                      ? 'Vos chroniques préférées apparaîtront ici'
+                      : '${_favorites.length} chronique${_favorites.length > 1 ? 's' : ''} mise${_favorites.length > 1 ? 's' : ''} de côté',
+                  accent: const Color(0xFFE05252),
+                ),
+              ),
+              _buildContent(isDark, width),
+            ],
+          ),
         ),
-      ),
-    );
+      );
+    });
   }
 
   Widget _buildHeader(bool isDark) {
@@ -169,7 +202,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
     );
   }
 
-  Widget _buildContent(bool isDark) {
+  Widget _buildContent(bool isDark, double width) {
     if (_isLoading) {
       return SliverFillRemaining(
         child: Center(child: CircularProgressIndicator(color: AppTheme.skyBlue)),
@@ -214,12 +247,17 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
       );
     }
 
+    final insets = Responsive.contentInsets(width);
+    final wide = Responsive.useSidebar(width);
+    final gutter = Responsive.gutter(width);
+
     return SliverPadding(
-      padding: const EdgeInsets.fromLTRB(20, 0, 20, 100),
+      padding: EdgeInsets.fromLTRB(
+          insets.left, wide ? 22 : 16, insets.right, wide ? 40 : 100),
       sliver: SliverMasonryGrid.count(
-        crossAxisCount: 2,
-        mainAxisSpacing: 14,
-        crossAxisSpacing: 14,
+        crossAxisCount: Responsive.noteColumns(width - insets.horizontal),
+        mainAxisSpacing: gutter,
+        crossAxisSpacing: gutter,
         itemBuilder: (_, i) => NoteCard(
           note: _favorites[i],
           onTap: () => _open(_favorites[i]),
