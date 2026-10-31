@@ -44,6 +44,15 @@ class NoteCard extends StatefulWidget {
 class _NoteCardState extends State<NoteCard> {
   bool _hover = false;
 
+  /// Appui en cours. Le survol souleve la carte, l'appui l'enfonce : les
+  /// deux gestes se lisent differemment et ne se contredisent pas.
+  bool _down = false;
+
+  void _press(bool v) {
+    if (_down == v) return;
+    setState(() => _down = v);
+  }
+
   /// Place reservee au coeur, en haut a droite de la carte.
   double get _heartGutter => widget.onFavoriteToggle == null ? 0 : 38;
 
@@ -74,7 +83,17 @@ class _NoteCardState extends State<NoteCard> {
         onTap: widget.onTap,
         onLongPress: widget.onLongPress,
         onSecondaryTap: widget.onLongPress,
-        child: AnimatedContainer(
+        // L'appui n'est pas capte par un GestureDetector supplementaire :
+        // il s'ajoute a celui qui existe, sinon le glissement lateral de
+        // SwipeableNoteCard entrait en concurrence avec lui.
+        onTapDown: (_) => _press(true),
+        onTapUp: (_) => _press(false),
+        onTapCancel: () => _press(false),
+        child: AnimatedScale(
+          scale: _down ? 0.975 : 1,
+          duration: AppMotion.fast,
+          curve: AppMotion.enter,
+          child: AnimatedContainer(
           duration: AppMotion.medium,
           curve: AppMotion.enter,
           transform: Matrix4.identity()..translate(0.0, _hover ? -4.0 : 0.0),
@@ -195,6 +214,7 @@ class _NoteCardState extends State<NoteCard> {
                   ),
                 ),
             ],
+            ),
           ),
         ),
       ),

@@ -15,8 +15,12 @@ class ImageBase64Service {
     return _instance!;
   }
 
-  /// Cache pour éviter de re-décoder les mêmes chaînes Base64 à chaque frame
+  /// Cache des images décodées.
+  ///
+  /// Borné par le volume total, pas par le nombre d'entrées : sur un
+  /// téléphone de trois gigaoctets, c'est le volume qui étouffe.
   final Map<String, Uint8List> _decodeCache = {};
+  int _cacheBytes = 0;
 
   /// Encode une image depuis son chemin en Base64
   /// Retourne null si le fichier n'existe pas
@@ -69,26 +73,43 @@ class ImageBase64Service {
     return results;
   }
 
-  /// Décode une chaîne Base64 en bytes pour affichage
-  /// Au-dela de cette taille, on decode sans passer par le cache.
-  ///
-  /// Le cache etait indexe par la chaine base64 entiere : une photo d'un
-  /// megaoctet servait donc de cle. Chercher dedans obligeait a parcourir
-  /// tout ce megaoctet pour en calculer l'empreinte, et cent entrees
-  /// retenaient pres de cent-soixante megaoctets. Pendant la recuperation
-  /// des photos du cloud, cela suffisait a figer l'interface.
-  ///
-  /// Les petites images — avatars, vignettes — profitent encore du cache :
-  /// ce sont les seules qu'on redecode plusieurs fois.
-  static const int _cacheMaxPayload = 48 * 1024;
+  /// Volume maximal retenu. Vingt-quatre mégaoctets suffisent à garder les
+  /// avatars et les vignettes d'une liste entière.
+  static const int _cacheMaxBytes = 24 * 1024 * 1024;
 
+  /// Au-delà, une seule photo remplirait le cache à elle seule.
+  static const int _cacheMaxEntry = 3 * 1024 * 1024;
+
+  /// Clé courte dérivée de la chaîne.
+  ///
+  /// La première version prenait la chaîne base64 entière comme clé : une
+  /// photo d'un mégaoctet était donc retenue deux fois, en clé et en
+  /// valeur. La corriger en refusant les grosses images était pire encore —
+  /// elles se redécodaient alors à chaque reconstruction, sur le thread
+  /// d'interface. On ne garde ici que la longueur et les deux extrémités :
+  /// deux images distinctes qui partageraient les trois n'existent pas en
+  /// pratique, et la clé tient en cent trente caractères.
+  static String _keyFor(String s) {
+    if (s.length <= 128) return s;
+    return '${s.length}:${s.substring(0, 64)}:${s.substring(s.length - 64)}';
+  }
+
+  /// Décode une chaîne Base64 en bytes pour affichage.
+  ///
+  /// Toutes les tailles passent par le cache désormais : c'est le volume
+  /// total qui est borné, et les entrées les plus anciennes sortent
+  /// d'abord.
   Uint8List? decodeBase64ToBytes(String base64String) {
     if (base64String.isEmpty) return null;
 
-    final cacheable = base64String.length <= _cacheMaxPayload;
-    if (cacheable) {
-      final cached = _decodeCache[base64String];
-      if (cached != null) return cached;
+    final key = _keyFor(base64String);
+
+    // Retirer puis réinsérer remet l'entrée en fin de file : les plus
+    // anciennement utilisées partent en premier quand la borne est atteinte.
+    final cached = _decodeCache.remove(key);
+    if (cached != null) {
+      _decodeCache[key] = cached;
+      return cached;
     }
 
     try {
@@ -99,17 +120,31 @@ class ImageBase64Service {
       }
 
       final bytes = base64Decode(cleanBase64.trim());
-
-      if (cacheable) {
-        if (_decodeCache.length > 60) _decodeCache.clear();
-        _decodeCache[base64String] = bytes;
-      }
-
+      _remember(key, bytes);
       return bytes;
     } catch (e) {
-      print('Erreur decodage Base64: $e');
+      debugPrint('Erreur decodage Base64: $e');
       return null;
     }
+  }
+
+  void _remember(String key, Uint8List bytes) {
+    if (bytes.lengthInBytes > _cacheMaxEntry) return;
+
+    _decodeCache[key] = bytes;
+    _cacheBytes += bytes.lengthInBytes;
+
+    while (_cacheBytes > _cacheMaxBytes && _decodeCache.isNotEmpty) {
+      final oldest = _decodeCache.keys.first;
+      final dropped = _decodeCache.remove(oldest);
+      _cacheBytes -= dropped?.lengthInBytes ?? 0;
+    }
+  }
+
+  /// Vide le cache. Appelé quand le système signale une pression mémoire.
+  void clearCache() {
+    _decodeCache.clear();
+    _cacheBytes = 0;
   }
 
   /// Crée un widget Image à partir d'une chaîne Base64

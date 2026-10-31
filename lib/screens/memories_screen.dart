@@ -701,6 +701,12 @@ class _MemoryCollectionWidgetState extends State<_MemoryCollectionWidget> {
                     child: Image.file(
                       File(note.imagePaths.first),
                       fit: BoxFit.cover,
+                      // Cette carte ne depasse pas la largeur de l'ecran :
+                      // decoder la photo en pleine resolution ne sert qu'a
+                      // remplir la memoire graphique.
+                      cacheWidth: (MediaQuery.sizeOf(context).width *
+                              MediaQuery.devicePixelRatioOf(context))
+                          .round(),
                       errorBuilder: (_, __, ___) => const SizedBox(),
                     ),
                   ),

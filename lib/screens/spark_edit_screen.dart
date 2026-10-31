@@ -224,7 +224,15 @@ class _SparkEditScreenState extends State<SparkEditScreen> {
                     ),
                     image: _imagePath != null
                         ? DecorationImage(
-                            image: FileImage(File(_imagePath!)),
+                            // Un DecorationImage n'a pas de cacheWidth :
+                            // ResizeImage joue le meme role, sans quoi la
+                            // photo est decodee en pleine resolution.
+                            image: ResizeImage(
+                              FileImage(File(_imagePath!)),
+                              width: (MediaQuery.sizeOf(context).width *
+                                      MediaQuery.devicePixelRatioOf(context))
+                                  .round(),
+                            ),
                             fit: BoxFit.cover,
                           )
                         : null,

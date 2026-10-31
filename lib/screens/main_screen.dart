@@ -94,6 +94,17 @@ class _MainScreenState extends State<MainScreen> {
     SettingsScreen()
   ];
 
+  /// Onglets deja ouverts au moins une fois.
+  ///
+  /// L'IndexedStack monte tous ses enfants d'un coup pour leur garder leur
+  /// etat. Sur desktop c'est gratuit ; sur un telephone de trois gigaoctets,
+  /// les huit ecrans chargeaient leurs images en meme temps — y compris
+  /// l'album et les souvenirs, les deux plus gourmands — et Android tuait
+  /// l'application. On ne construit donc un onglet qu'a sa premiere visite.
+  /// Une fois visite, il reste monte : son etat et sa position de defilement
+  /// sont preserves comme avant.
+  final Set<int> _visited = {};
+
   @override
   void initState() {
     super.initState();
@@ -206,6 +217,12 @@ class _MainScreenState extends State<MainScreen> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final isSignedIn = AuthService.instance.isSignedIn;
 
+    // Marque l'onglet affiche comme visite. Le faire ici plutot que dans
+    // chaque setState evite qu'un futur chemin de navigation oublie de le
+    // declarer et affiche un onglet vide. L'ensemble ne fait que croitre et
+    // il est relu dans la meme passe : aucun setState n'est requis.
+    _visited.add(_currentIndex);
+
     return Shortcuts(
       shortcuts: <ShortcutActivator, Intent>{
         const SingleActivator(LogicalKeyboardKey.keyN, control: true):
@@ -286,7 +303,13 @@ class _MainScreenState extends State<MainScreen> {
                       // position de defilement et leurs donnees deja chargees.
                       child: IndexedStack(
                         index: _currentIndex,
-                        children: _screens,
+                        children: [
+                          for (var i = 0; i < _screens.length; i++)
+                            if (_visited.contains(i))
+                              _screens[i]
+                            else
+                              const SizedBox.shrink(),
+                        ],
                       ),
                     ),
                   ],

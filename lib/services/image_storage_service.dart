@@ -33,15 +33,31 @@ class ImageStorageService {
     }
   }
 
+  /// Ce chemin est-il deja dans le stockage permanent ?
+  ///
+  /// Sert a ne pas recopier une image qui s'y trouve deja : chaque copie
+  /// inutile est un doublon qui occupe la place sur le telephone et une
+  /// photo de plus a envoyer au cloud.
+  bool isManaged(String filePath) {
+    final dir = _imagesDirectory;
+    if (dir == null) return false;
+    return path.equals(path.dirname(filePath), dir.path);
+  }
+
   /// Copie une image depuis le cache temporaire vers le stockage permanent
-  /// 
+  ///
   /// [sourcePath] : chemin de l'image temporaire (ex: /cache/scaled_xxx.jpg)
   /// Retourne : nouveau chemin permanent
   Future<String> saveImagePermanently(String sourcePath) async {
     await initialize();
 
+    // Deja a l'abri : recopier ne ferait qu'un doublon de plus. Le
+    // recadrage ecrit desormais directement ici, et il traverse ce chemin
+    // comme les autres.
+    if (isManaged(sourcePath)) return sourcePath;
+
     final sourceFile = File(sourcePath);
-    
+
     // Vérifier que le fichier source existe
     if (!await sourceFile.exists()) {
       throw Exception('Image source introuvable: $sourcePath');

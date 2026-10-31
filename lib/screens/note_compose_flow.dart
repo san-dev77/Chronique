@@ -81,6 +81,10 @@ class _NoteComposeFlowState extends State<NoteComposeFlow> {
       final cropped = await ImageCropService.instance.cropImage(context, path);
       if (!mounted) return;
       if (cropped != null) setState(() => _imagePath = cropped);
+    } catch (e) {
+      // Echouer en silence laissait croire que le recadrage n'avait rien
+      // change, alors que l'image etait perdue.
+      if (mounted) _toast('Le recadrage a échoué, l\'image d\'origine est gardée');
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -373,8 +377,14 @@ class _NoteComposeFlowState extends State<NoteComposeFlow> {
                 },
               ),
             ),
-          const SizedBox(height: 18),
-          Row(
+          const SizedBox(height: 22),
+          // Un Row collait les trois boutons des que l'ecran etait etroit :
+          // « Changer d'image » touchait « Recadrer » d'un cote et
+          // « Retirer » de l'autre. Wrap leur laisse de l'air et les fait
+          // passer a la ligne plutot que de les comprimer.
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
             children: [
               _GhostButton(
                 icon: Icons.crop_rotate_rounded,
@@ -383,7 +393,6 @@ class _NoteComposeFlowState extends State<NoteComposeFlow> {
                 isDark: isDark,
                 onTap: _crop,
               ),
-              const SizedBox(width: 12),
               _GhostButton(
                 icon: Icons.swap_horiz_rounded,
                 label: 'Changer d\'image',
@@ -391,7 +400,6 @@ class _NoteComposeFlowState extends State<NoteComposeFlow> {
                 isDark: isDark,
                 onTap: _pickImage,
               ),
-              const Spacer(),
               _GhostButton(
                 icon: Icons.delete_outline_rounded,
                 label: 'Retirer',
@@ -883,7 +891,9 @@ class _GhostButtonState extends State<_GhostButton> {
         onTap: widget.onTap,
         child: AnimatedContainer(
           duration: AppMotion.fast,
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          // 14 px lateraux rendaient les trois boutons de recadrage
+          // compacts au point de se toucher : l'icone frolait le libelle.
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
           decoration: BoxDecoration(
             color: _hover
                 ? widget.accent.withValues(alpha: 0.14)

@@ -60,9 +60,12 @@ class ImageGalleryEditor extends StatelessWidget {
         children: [
           AspectRatio(
             aspectRatio: 16 / 10,
-            child: Image.file(
-              File(path),
-              fit: BoxFit.cover,
+            child: LayoutBuilder(
+              builder: (context, c) => Image.file(
+                File(path),
+                fit: BoxFit.cover,
+                cacheWidth: _cacheWidth(context, c),
+              ),
             ),
           ),
           _buildRemoveButton(index),
@@ -78,15 +81,28 @@ class ImageGalleryEditor extends StatelessWidget {
         children: [
           AspectRatio(
             aspectRatio: 1,
-            child: Image.file(
-              File(path),
-              fit: BoxFit.cover,
+            child: LayoutBuilder(
+              builder: (context, c) => Image.file(
+                File(path),
+                fit: BoxFit.cover,
+                cacheWidth: _cacheWidth(context, c),
+              ),
             ),
           ),
           _buildRemoveButton(index),
         ],
       ),
     );
+  }
+
+  /// Resolution de decodage adaptee a la place reellement occupee.
+  ///
+  /// L'editeur montre jusqu'a trois vignettes : sans cette borne, trois
+  /// photos de 1920 px etaient decodees en entier pour des cases de deux
+  /// cents pixels.
+  static int? _cacheWidth(BuildContext context, BoxConstraints c) {
+    if (!c.maxWidth.isFinite || c.maxWidth <= 0) return null;
+    return (c.maxWidth * MediaQuery.devicePixelRatioOf(context)).round();
   }
 
   Widget _buildImageGrid() {

@@ -27,7 +27,15 @@ class SplashScreenClean extends StatefulWidget {
 class _SplashScreenCleanState extends State<SplashScreenClean>
     with SingleTickerProviderStateMixin {
   /// Duree totale, fondu de sortie compris.
-  static const int _totalMs = 1750;
+  ///
+  /// La sequence elle-meme se termine vers 1520 ms et n'a pas change de
+  /// rythme : ralentir l'ouverture de la boite l'aurait rendue poussive.
+  /// C'est une pause qui s'ajoute apres — la marque reste posee un peu plus
+  /// d'une seconde avant le fondu, le temps de la regarder.
+  static const int _totalMs = 2900;
+
+  /// Instant ou le fondu de sortie commence.
+  static const double _fadeStartMs = 2620;
 
   late final AnimationController _controller = AnimationController(
     vsync: this,
@@ -208,7 +216,9 @@ class _BoxSplashPainter extends CustomPainter {
     final nameA = _ease(_seg(1050, 1330), 2);
     final subA = _ease(_seg(1180, 1450), 2);
     final lift = _ease(_seg(1080, 1520));
-    final out = _seg(1520, 1750);
+    // La marque reste entiere de 1520 ms a 2620 ms : c'est la pause.
+    final out = _seg(_SplashScreenCleanState._fadeStartMs,
+        _SplashScreenCleanState._totalMs.toDouble());
 
     final bw = 128 * scale;
     final bh = 76 * scale;

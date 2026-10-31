@@ -1,38 +1,129 @@
 <!DOCTYPE html>
-<html>
+<html lang="fr">
 <head>
   <!--
-    If you are serving your web app in a path other than the root, change the
-    href value below to reflect the base path you are serving from.
-
-    The path provided below has to start and end with a slash "/" in order for
-    it to work correctly.
-
-    For more details:
-    * https://developer.mozilla.org/en-US/docs/Web/HTML/Element/base
-
-    This is a placeholder for base href that will be replaced by the value of
-    the `--base-href` argument provided to `flutter build`.
+    Remplacé au moment du build par l'argument `--base-href`. Doit commencer
+    et finir par une barre oblique.
   -->
   <base href="$FLUTTER_BASE_HREF">
 
   <meta charset="UTF-8">
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
-  <meta name="description" content="A new Flutter project.">
+  <meta name="description"
+        content="Votre journal personnel : chroniques, citations et étincelles.">
 
-  <!-- iOS meta tags & icons -->
+  <!--
+    viewport-fit=cover : sans cela, iOS laisse deux bandes blanches autour de
+    l'écran sur les iPhone à encoche une fois l'app ajoutée à l'accueil.
+    user-scalable=no évite le zoom accidentel à deux doigts pendant la
+    lecture d'une chronique.
+  -->
+  <meta name="viewport"
+        content="width=device-width, initial-scale=1.0, maximum-scale=1.0,
+                 user-scalable=no, viewport-fit=cover">
+
+  <!--
+    Les balises qui font qu'iOS traite la page comme une application.
+    « apple-mobile-web-app-capable » supprime la barre d'adresse Safari une
+    fois l'icône ajoutée à l'écran d'accueil ; sans elle, Chroniques
+    s'ouvrirait dans un onglet ordinaire.
+  -->
   <meta name="mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black">
-  <meta name="apple-mobile-web-app-title" content="note_keeper">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Chroniques">
   <link rel="apple-touch-icon" href="icons/Icon-192.png">
 
-  <!-- Favicon -->
+  <meta name="theme-color" content="#5BA4E6">
+
   <link rel="icon" type="image/png" href="favicon.png"/>
 
-  <title>note_keeper</title>
+  <title>Chroniques</title>
   <link rel="manifest" href="manifest.json">
+
+  <style>
+    /*
+      Flutter met deux à quatre secondes à démarrer sur un iPhone : sans
+      rien, l'écran reste blanc et l'application paraît cassée. Ce voile
+      reprend le fond et la couleur de l'écran d'ouverture, puis s'efface
+      de lui-même dès que le premier dessin arrive.
+    */
+    html, body {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      background: #0E1726;
+      overscroll-behavior: none;
+    }
+
+    #demarrage {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 22px;
+      background: #0E1726;
+      transition: opacity 420ms ease-out;
+      z-index: 10;
+    }
+
+    #demarrage.parti {
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    #demarrage .boite {
+      width: 58px;
+      height: 58px;
+      border-radius: 16px;
+      border: 2px solid rgba(91, 164, 230, 0.85);
+      animation: respire 1800ms ease-in-out infinite;
+    }
+
+    #demarrage .mot {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+                   sans-serif;
+      font-size: 13px;
+      font-weight: 600;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: rgba(255, 255, 255, 0.45);
+    }
+
+    @keyframes respire {
+      0%, 100% { transform: scale(1); opacity: 0.55; }
+      50%      { transform: scale(1.12); opacity: 1; }
+    }
+
+    /* Le réglage système « réduire les animations » est respecté. */
+    @media (prefers-reduced-motion: reduce) {
+      #demarrage .boite { animation: none; }
+    }
+  </style>
 </head>
 <body>
+  <div id="demarrage">
+    <div class="boite"></div>
+    <div class="mot">Chroniques</div>
+  </div>
+
+  <script>
+    // Flutter prévient quand sa première image est peinte. On retire alors
+    // le voile. Le repli à huit secondes évite de laisser l'écran bloqué si
+    // cet événement n'arrive jamais.
+    function masquerDemarrage() {
+      var v = document.getElementById('demarrage');
+      if (!v || v.classList.contains('parti')) return;
+      v.classList.add('parti');
+      setTimeout(function () { v.remove(); }, 500);
+    }
+
+    window.addEventListener('flutter-first-frame', masquerDemarrage);
+    setTimeout(masquerDemarrage, 8000);
+  </script>
+
   <script src="flutter_bootstrap.js" async></script>
 </body>
 </html>

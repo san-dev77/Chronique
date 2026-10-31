@@ -8,7 +8,7 @@
 ; Produit : installer\out\ChroniquesSetup-<version>.exe
 
 #define AppName        "Chroniques"
-#define AppVersion     "1.0.0"
+#define AppVersion     "1.1.0"
 #define AppPublisher   "Chroniques"
 #define AppExeName     "Chroniques.exe"
 #define BuildDir       "..\build\windows\x64\runner\Release"

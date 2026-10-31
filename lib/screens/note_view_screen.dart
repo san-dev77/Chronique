@@ -14,6 +14,7 @@ import '../widgets/reading_chrome.dart';
 import '../widgets/rich_text_viewer.dart';
 import '../widgets/save_flash.dart';
 import '../utils/responsive.dart';
+import '../widgets/motion.dart';
 
 class NoteViewScreen extends StatefulWidget {
   final Note note;
@@ -374,9 +375,16 @@ class _NoteViewScreenState extends State<NoteViewScreen>
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         if (note.imagePaths.isNotEmpty) ...[
-          NoteHeroImage(
-            imagePaths: note.imagePaths,
-            auraColor: hasAura ? auraColor : null,
+          // L'image reste un peu en arriere quand le texte monte : c'est ce
+          // decalage qui donne la profondeur. Il ne coute qu'une
+          // translation, et seul ce sous-arbre se reconstruit — le
+          // ScrollController est ecoute ici, pas par la page entiere.
+          Parallax(
+            controller: _scroll,
+            child: NoteHeroImage(
+              imagePaths: note.imagePaths,
+              auraColor: hasAura ? auraColor : null,
+            ),
           ),
           const SizedBox(height: 28),
         ],

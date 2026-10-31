@@ -12,6 +12,7 @@ import 'screens/memories_screen.dart' show openPeriodSlideshow;
 import 'screens/note_view_screen.dart';
 import 'screens/shared_note_view_screen.dart';
 import 'services/note_service.dart';
+import 'services/image_base64_service.dart';
 import 'services/image_storage_service.dart';
 import 'services/connectivity_service.dart';
 import 'services/memory_notification_service.dart';
@@ -31,8 +32,28 @@ import 'firebase_options.dart';
 // Key globale pour la navigation (notamment depuis les notifications)
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
+/// Plafonne le cache d'images de Flutter.
+///
+/// Par defaut il retient cent megaoctets d'images decodees sur mille
+/// entrees — un calibrage pour telephone confortable. Sur un appareil de
+/// trois gigaoctets, cela suffisait a faire monter la memoire graphique a
+/// trois cents megaoctets et a declencher le tueur de processus d'Android.
+/// Les ecrans vivant tous en meme temps dans un IndexedStack, aucune borne
+/// naturelle ne venait du nombre d'onglets.
+void _tuneImageCache() {
+  if (kIsWeb) return;
+  final mobile = defaultTargetPlatform == TargetPlatform.android ||
+      defaultTargetPlatform == TargetPlatform.iOS;
+  if (!mobile) return;
+
+  final cache = PaintingBinding.instance.imageCache;
+  cache.maximumSizeBytes = 40 * 1024 * 1024;
+  cache.maximumSize = 120;
+}
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  _tuneImageCache();
 
   // Initialiser Firebase
   try {
@@ -108,10 +129,15 @@ class NoteKeeperApp extends StatefulWidget {
   State<NoteKeeperApp> createState() => _NoteKeeperAppState();
 }
 
-class _NoteKeeperAppState extends State<NoteKeeperApp> {
+class _NoteKeeperAppState extends State<NoteKeeperApp>
+    with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
+    // Android previent avant de tuer : on rend les images plutot que
+    // d'attendre que le systeme nous ferme.
+    WidgetsBinding.instance.addObserver(this);
+
     // Configurer le callback pour ouvrir une note depuis la notification
     MemoryNotificationService.instance.onOpenNote = _openNote;
 
@@ -153,6 +179,26 @@ class _NoteKeeperAppState extends State<NoteKeeperApp> {
         await CloudSyncService.instance.stopLiveSync();
       }
     });
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  /// Le systeme manque de memoire : on rend tout ce qui se recalcule.
+  ///
+  /// Les images se redecodent depuis les fichiers ou le base64 ; les perdre
+  /// ne coute qu'un instant de rechargement, alors qu'etre tue coute la
+  /// session entiere.
+  @override
+  void didHaveMemoryPressure() {
+    super.didHaveMemoryPressure();
+    debugPrint('Pression memoire : liberation des caches d\'images');
+    PaintingBinding.instance.imageCache.clear();
+    PaintingBinding.instance.imageCache.clearLiveImages();
+    ImageBase64Service.instance.clearCache();
   }
 
   void _openNote(String noteId) async {

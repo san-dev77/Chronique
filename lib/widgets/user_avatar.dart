@@ -100,9 +100,15 @@ class UserAvatar extends StatelessWidget {
     if (photoBase64 != null && photoBase64.isNotEmpty) {
       final bytes =
           ImageBase64Service.instance.decodeBase64ToBytes(photoBase64);
+      // Sans ResizeImage, une photo de profil de 1000x1000 occupait quatre
+      // megaoctets de texture pour un rond de quarante pixels — et l'avatar
+      // apparait sur plusieurs ecrans a la fois.
+      final side = (radius * 2 * MediaQuery.devicePixelRatioOf(context)).round();
       avatar = CircleAvatar(
         radius: radius,
-        backgroundImage: bytes != null ? MemoryImage(bytes) : null,
+        backgroundImage: bytes != null
+            ? ResizeImage(MemoryImage(bytes), width: side, height: side)
+            : null,
       );
     } else if (photoUrl != null && photoUrl.isNotEmpty) {
       avatar = CircleAvatar(

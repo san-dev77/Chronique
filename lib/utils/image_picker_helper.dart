@@ -72,15 +72,19 @@ class ImagePickerHelper {
                       child: FloatingActionButton.small(
                         heroTag: 'crop_btn_${DateTime.now().millisecondsSinceEpoch}',
                         onPressed: () async {
-                          final String? cropped = await ImageCropService.instance.cropImage(
-                            context, 
-                            currentLocalPath!, 
-                            isProfile: isProfile
-                          );
-                          if (cropped != null) {
-                            setDialogState(() {
-                              currentLocalPath = cropped;
-                            });
+                          try {
+                            final String? cropped = await ImageCropService.instance.cropImage(
+                              context,
+                              currentLocalPath!,
+                              isProfile: isProfile
+                            );
+                            if (cropped != null) {
+                              setDialogState(() {
+                                currentLocalPath = cropped;
+                              });
+                            }
+                          } catch (e) {
+                            debugPrint('Erreur recadrage: $e');
                           }
                         },
                         backgroundColor: AppTheme.skyBlue,

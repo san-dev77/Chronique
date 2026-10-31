@@ -26,6 +26,9 @@ import '../services/spark_service.dart';
 import 'spark_edit_screen.dart';
 import 'sparks_list_screen.dart';
 import '../services/guidance_service.dart';
+import '../utils/french_dates.dart';
+import '../widgets/search_sheet.dart';
+import '../widgets/motion.dart';
 import 'dart:async';
 import 'dart:math';
 
@@ -213,376 +216,71 @@ class _NotesScreenState extends State<NotesScreen> {
     );
   }
 
-  _buildSearchModal() {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
+  Widget _buildSearchModal() {
+    // La feuille vit dans son propre fichier : 315 lignes de mise en page
+    // melees au reste de l'ecran rendaient l'ensemble illisible, et c'est
+    // dans ce fouillis que les bordures grey.shade300 ignorant le theme
+    // sombre avaient pu passer inapercues.
+    //
+    // StatefulBuilder : la feuille est posee par showModalBottomSheet, donc
+    // hors de l'arbre de cet ecran. Sans cela, taper dans le champ ne
+    // redessinait rien et la liste restait figee.
+    return StatefulBuilder(
+      builder: (context, setSheetState) {
+        void refresh() {
+          // Le filtrage se fait a la frappe, sans attendre l'anti-rebond de
+          // l'ecran : ici la liste est sous les yeux, un retard de 220 ms se
+          // verrait.
+          _searchQuery = _searchController.text;
+          _applyFilters();
+          if (mounted) setState(() {});
+          setSheetState(() {});
+        }
 
-    return Container(
-      height: MediaQuery.of(context).size.height * 0.85,
-      decoration: BoxDecoration(
-        color: isDark ? AppTheme.surfaceDark : Colors.white,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      child: Column(
-        children: [
-          // Handle
-          Container(
-            width: 40,
-            height: 4,
-            margin: const EdgeInsets.only(top: 12, bottom: 20),
-            decoration: BoxDecoration(
-              color: Colors.grey.shade300,
-              borderRadius: BorderRadius.circular(2),
-            ),
+        return SearchSheetHost(
+          controller: _searchController,
+          onQueryChanged: refresh,
+          builder: (query) => SearchSheet(
+            controller: _searchController,
+            query: query,
+            filters: _filters,
+            filterCounts: _filterCounts,
+            selectedFilter: _selectedFilter,
+            onFilterChanged: (i) {
+              _selectedFilter = i;
+              _applyFilters();
+              refresh();
+            },
+            results: _filteredNotes,
+            onOpenNote: (note) {
+              Navigator.pop(context);
+              _openNote(note);
+            },
+            sparkCount: _sparkCount,
+            quoteCount: _notes
+                .where((n) => n.quote != null && n.quote!.trim().isNotEmpty)
+                .length,
+            favoriteCount: _notes.where((n) => n.isFavorite).length,
+            onOpenSparks: () {
+              Navigator.pop(context);
+              _openSparks();
+            },
+            onOpenQuotes: () {
+              Navigator.pop(context);
+              _openQuotes();
+            },
+            onShowFavorites: () {
+              Navigator.pop(context);
+              if (mounted) {
+                setState(() {
+                  _selectedFilter = 1;
+                  _applyFilters();
+                });
+              }
+            },
           ),
-
-          // Header
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 24),
-            child: Row(
-              children: [
-                Icon(
-                  Icons.search_rounded,
-                  color: AppTheme.skyBlue,
-                  size: 24,
-                ),
-                const SizedBox(width: 12),
-                Text(
-                  'Recherche & Filtres',
-                  style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.w700,
-                    color: isDark ? Colors.white : AppTheme.textDark,
-                  ),
-                ),
-                const Spacer(),
-                IconButton(
-                  onPressed: () => Navigator.pop(context),
-                  icon: Icon(
-                    Icons.close_rounded,
-                    color: isDark ? Colors.white54 : Colors.grey.shade600,
-                  ),
-                ),
-              ],
-            ),
-          ),
-
-          const SizedBox(height: 20),
-
-          // Search field
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 24),
-            child: Container(
-              decoration: BoxDecoration(
-                color: isDark
-                    ? Colors.white.withValues(alpha: 0.1)
-                    : Colors.grey.shade100,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(
-                  color: Colors.grey.shade300,
-                  width: 1,
-                ),
-              ),
-              child: TextField(
-                controller: _searchController,
-                autofocus: true,
-                style: TextStyle(
-                  color: isDark ? Colors.white : AppTheme.textDark,
-                  fontSize: 16,
-                ),
-                decoration: InputDecoration(
-                  hintText:
-                      'Rechercher dans les titres, contenus, citations...',
-                  hintStyle: TextStyle(
-                    color: isDark ? Colors.white38 : Colors.grey.shade500,
-                  ),
-                  prefixIcon: Icon(
-                    Icons.search_rounded,
-                    color: isDark ? Colors.white54 : Colors.grey.shade600,
-                  ),
-                  suffixIcon: _searchQuery.isNotEmpty
-                      ? IconButton(
-                          icon: Icon(
-                            Icons.close_rounded,
-                            color:
-                                isDark ? Colors.white54 : Colors.grey.shade600,
-                          ),
-                          onPressed: () {
-                            _searchController.clear();
-                            if (mounted) setState(() {});
-                          },
-                        )
-                      : null,
-                  border: InputBorder.none,
-                  contentPadding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-                ),
-              ),
-            ),
-          ),
-
-          const SizedBox(height: 24),
-
-          // Filters
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 24),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Filtres',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                    color: isDark ? Colors.white : AppTheme.textDark,
-                  ),
-                ),
-                const SizedBox(height: 16),
-                Wrap(
-                  spacing: 12,
-                  runSpacing: 12,
-                  children: List.generate(_filters.length, (i) {
-                    final selected = _selectedFilter == i;
-                    final count = _filterCounts[i];
-
-                    return GestureDetector(
-                      onTap: () {
-                        if (mounted) {
-                          setState(() {
-                            _selectedFilter = i;
-                            _applyFilters();
-                          });
-                        }
-                      },
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 200),
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 16, vertical: 12),
-                        decoration: BoxDecoration(
-                          color: selected
-                              ? AppTheme.skyBlue
-                              : (isDark
-                                  ? Colors.white.withValues(alpha: 0.1)
-                                  : Colors.grey.shade100),
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(
-                            color: selected
-                                ? AppTheme.skyBlue
-                                : Colors.grey.shade300,
-                            width: 1,
-                          ),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              _filters[i],
-                              style: TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.w600,
-                                color: selected
-                                    ? Colors.white
-                                    : (isDark
-                                        ? Colors.white
-                                        : AppTheme.textDark),
-                              ),
-                            ),
-                            if (count > 0) ...[
-                              const SizedBox(width: 8),
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 6, vertical: 2),
-                                decoration: BoxDecoration(
-                                  color: selected
-                                      ? Colors.white.withValues(alpha: 0.2)
-                                      : AppTheme.skyBlue,
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: Text(
-                                  '$count',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w700,
-                                    color:
-                                        selected ? Colors.white : Colors.white,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ],
-                        ),
-                      ),
-                    );
-                  }),
-                ),
-              ],
-            ),
-          ),
-
-          const SizedBox(height: 24),
-
-          // Quick actions
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 24),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Actions rapides',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                    color: isDark ? Colors.white : AppTheme.textDark,
-                  ),
-                ),
-                const SizedBox(height: 16),
-                Row(
-                  children: [
-                    Expanded(
-                      child: _buildQuickAction(
-                        icon: Icons.auto_awesome_rounded,
-                        label: 'Étincelles',
-                        count: _sparkCount,
-                        color: Colors.orange.shade400,
-                        onTap: () {
-                          Navigator.pop(context);
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                                builder: (context) => const SparksListScreen()),
-                          );
-                        },
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: _buildQuickAction(
-                        icon: Icons.favorite_rounded,
-                        label: 'Favoris',
-                        count: _notes.where((n) => n.isFavorite).length,
-                        color: Colors.red.shade400,
-                        onTap: () {
-                          Navigator.pop(context);
-                          if (mounted) {
-                            setState(() {
-                              _selectedFilter = 1;
-                              _applyFilters();
-                            });
-                          }
-                        },
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                // La barre du bas est pleine a six entrees : sur telephone,
-                // les citations s'atteignent d'ici.
-                Row(
-                  children: [
-                    Expanded(
-                      child: _buildQuickAction(
-                        icon: Icons.format_quote_rounded,
-                        label: 'Citations',
-                        count: _notes
-                            .where((n) =>
-                                n.quote != null && n.quote!.trim().isNotEmpty)
-                            .length,
-                        color: const Color(0xFF8B6FD6),
-                        onTap: () {
-                          Navigator.pop(context);
-                          _openQuotes();
-                        },
-                      ),
-                    ),
-                    // Une moitie vide a droite : la pastille garde la meme
-                    // largeur que les deux de la rangee du dessus.
-                    const SizedBox(width: 12),
-                    const Expanded(child: SizedBox.shrink()),
-                  ],
-                ),
-              ],
-            ),
-          ),
-
-          const Spacer(),
-
-          // Apply button
-          Padding(
-            padding: const EdgeInsets.all(24),
-            child: SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: () => Navigator.pop(context),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppTheme.skyBlue,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
-                child: Text(
-                  'Appliquer (${_filteredNotes.length} '
-                  'résultat${_filteredNotes.length > 1 ? 's' : ''})',
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildQuickAction({
-    required IconData icon,
-    required String label,
-    required int count,
-    required Color color,
-    required VoidCallback onTap,
-  }) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.1),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: color.withValues(alpha: 0.3),
-            width: 1,
-          ),
-        ),
-        child: Column(
-          children: [
-            Icon(icon, color: color, size: 24),
-            const SizedBox(height: 8),
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-                color: isDark ? Colors.white : AppTheme.textDark,
-              ),
-            ),
-            if (count > 0) ...[
-              const SizedBox(height: 4),
-              Text(
-                '$count',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: color,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ],
-          ],
-        ),
-      ),
+        );
+      },
     );
   }
 
@@ -1138,25 +836,31 @@ class _NotesScreenState extends State<NotesScreen> {
                     ],
                   ),
                   const SizedBox(height: 10),
-                  // Un Wrap, pas un Row : avec les compteurs, les deux
-                  // boutons depassent de douze pixels sur un telephone
-                  // etroit. Ici le second descend d'une ligne au lieu de
-                  // deborder.
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
+                  // Le Wrap qui precedait faisait descendre « Citations »
+                  // d'une ligne des que les compteurs grossissaient : les
+                  // deux boutons se retrouvaient l'un sous l'autre, ce qui
+                  // n'etait ni voulu ni lisible. Deux Expanded partagent la
+                  // largeur a parts egales — ils restent cote a cote quelle
+                  // que soit la largeur de l'ecran, et le libelle s'abrege
+                  // plutot que de deborder.
+                  Row(
                     children: [
-                      _BannerAccess(
-                        icon: Icons.bolt_rounded,
-                        label: 'Étincelles',
-                        count: _sparkCount,
-                        onTap: _openSparks,
+                      Expanded(
+                        child: _BannerAccess(
+                          icon: Icons.bolt_rounded,
+                          label: 'Étincelles',
+                          count: _sparkCount,
+                          onTap: _openSparks,
+                        ),
                       ),
-                      _BannerAccess(
-                        icon: Icons.format_quote_rounded,
-                        label: 'Citations',
-                        count: quotesCount,
-                        onTap: _openQuotes,
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: _BannerAccess(
+                          icon: Icons.format_quote_rounded,
+                          label: 'Citations',
+                          count: quotesCount,
+                          onTap: _openQuotes,
+                        ),
                       ),
                     ],
                   ),
@@ -1220,6 +924,27 @@ class _NotesScreenState extends State<NotesScreen> {
     final gutter = Responsive.gutter(width);
 
     final wide = Responsive.useSidebar(width);
+    final columns = Responsive.noteColumns(width - insets.horizontal);
+    final groupes = groupeParMois(_filteredNotes, (n) => n.createdAt);
+
+    // Une section par mois, et chaque section porte sa propre maconnerie,
+    // non defilante et construite d'un bloc.
+    //
+    // Ce detail est tout le sujet. Une grille en maconnerie paresseuse ne
+    // connait pas sa hauteur avant d'avoir construit ses cartes : elle
+    // l'estime. Quinze de ces grilles a la suite, c'etaient quinze
+    // estimations qui se corrigeaient au fil du defilement, et une
+    // estimation qui retrecit rappelle la position vers le haut — 1050 px
+    // de recul mesures, soit un retour au mois courant sans fin.
+    //
+    // En construisant chaque mois d'un bloc, son etendue est exacte des le
+    // depart : plus rien a corriger. La paresse se deplace au niveau de la
+    // SECTION — un mois hors champ n'est pas construit du tout — et un mois
+    // compte au plus une vingtaine de chroniques, donc la poussee memoire
+    // reste bornee.
+    //
+    // test/scroll_stabilite_test.dart chiffre les sept dispositions
+    // envisagees. Ne pas revenir a une suite de slivers paresseux.
     return SliverPadding(
       padding: EdgeInsets.fromLTRB(
         insets.left,
@@ -1229,17 +954,66 @@ class _NotesScreenState extends State<NotesScreen> {
         insets.right,
         wide ? 40 : 100,
       ),
-      sliver: SliverMasonryGrid.count(
-        crossAxisCount: Responsive.noteColumns(width - insets.horizontal),
-        mainAxisSpacing: gutter,
-        crossAxisSpacing: gutter,
-        itemBuilder: (_, i) => _buildEnhancedNoteCard(_filteredNotes[i]),
-        childCount: _filteredNotes.length,
+      sliver: SliverList(
+        delegate: SliverChildBuilderDelegate(
+          (context, g) {
+            final groupe = groupes[g];
+            // Rang global, pour que la cascade d'apparition traverse les
+            // mois sans repartir de zero a chaque bandeau.
+            final base =
+                groupes.take(g).fold<int>(0, (n, gr) => n + gr.length);
+
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _MonthHeading(
+                  label: libelleDuMois(groupe.first.createdAt),
+                  count: groupe.length,
+                  isDark: isDark,
+                  // Le premier bandeau touche le haut de la zone : il n'a
+                  // pas besoin de l'ecart qui separe les mois suivants.
+                  topGap: g == 0 ? 0 : gutter + 14,
+                ),
+                MasonryGridView.count(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  crossAxisCount: columns,
+                  mainAxisSpacing: gutter,
+                  crossAxisSpacing: gutter,
+                  itemCount: groupe.length,
+                  itemBuilder: (_, i) =>
+                      _buildEnhancedNoteCard(groupe[i], rang: base + i),
+                ),
+              ],
+            );
+          },
+          childCount: groupes.length,
+        ),
       ),
     );
   }
 
-  Widget _buildEnhancedNoteCard(Note note) {
+  /// Chroniques dont l'apparition a deja ete jouee.
+  ///
+  /// La grille recycle ses cartes : sans cette memoire, chaque retour en
+  /// arriere rejouait l'entree et la liste clignotait au defilement. On
+  /// retient donc les identifiants, pas les rangs — l'ordre peut changer.
+  final Set<String> _apparues = {};
+
+  Widget _buildEnhancedNoteCard(Note note, {int rang = 0}) {
+    final premiere = _apparues.add(note.id);
+
+    return Reveal(
+      // La cle porte l'identifiant : Flutter ne recycle pas l'etat de
+      // l'apparition d'une chronique vers une autre.
+      key: ValueKey('reveal-${note.id}'),
+      index: rang,
+      animate: premiere,
+      child: _carte(note),
+    );
+  }
+
+  Widget _carte(Note note) {
     return SwipeableNoteCard(
       // Cle stable : sans elle, un changement d'ordre detruit l'etat des
       // cartes — et l'animation du cœur disparaissait avant d'etre vue.
@@ -1412,18 +1186,25 @@ class _BannerAccessState extends State<_BannerAccess> {
           borderRadius: BorderRadius.circular(11),
           border: Border.all(color: Colors.white.withValues(alpha: 0.22)),
         ),
+        // Le bouton remplit desormais la moitie du bandeau : son contenu se
+        // centre, et le libelle cede la place au compteur plutot que de
+        // pousser le tout hors de l'ecran.
         child: Row(
-          mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Icon(widget.icon, size: 14, color: Colors.white),
             const SizedBox(width: 5),
-            Text(
-              widget.label,
-              style: const TextStyle(
-                fontSize: 12,
-                height: 1.1,
-                fontWeight: FontWeight.w700,
-                color: Colors.white,
+            Flexible(
+              child: Text(
+                widget.label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 12,
+                  height: 1.1,
+                  fontWeight: FontWeight.w700,
+                  color: Colors.white,
+                ),
               ),
             ),
             if (widget.count > 0) ...[
@@ -1845,6 +1626,69 @@ class _ProfileAvatarState extends State<_ProfileAvatar> {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// Intertitre d'un mois dans la grille des chroniques.
+///
+/// Discret par construction : un mois n'est pas un titre de section, c'est
+/// un repere. Il se lit en passant, sans concurrencer les cartes — d'ou le
+/// corps petit, la graisse moderee et le filet qui s'eteint a droite.
+class _MonthHeading extends StatelessWidget {
+  final String label;
+  final int count;
+  final bool isDark;
+  final double topGap;
+
+  const _MonthHeading({
+    required this.label,
+    required this.count,
+    required this.isDark,
+    required this.topGap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final ink = isDark ? AppTheme.textMutedDark : AppTheme.textMuted;
+
+    // Un repere, pas un titre de section : il se lit en passant et ne
+    // concurrence pas les chroniques. D'ou le corps petit et le filet qui
+    // s'eteint plutot qu'un trait franc d'un bord a l'autre, qui aurait
+    // dessine une boite autour de chaque mois.
+    return Padding(
+      padding: EdgeInsets.only(top: topGap, bottom: 14),
+      child: Row(
+        children: [
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 0.2,
+              height: 1.1,
+              color: isDark ? Colors.white70 : AppTheme.textDark,
+            ),
+          ),
+          const SizedBox(width: 9),
+          Text(
+            '$count',
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              height: 1.1,
+              color: ink.withValues(alpha: 0.75),
+            ),
+          ),
+          const SizedBox(width: 13),
+          Expanded(
+            child: FadingDivider(
+              color: ink.withValues(alpha: isDark ? 0.22 : 0.18),
+              fade: 0.04,
+            ),
+          ),
+        ],
       ),
     );
   }
